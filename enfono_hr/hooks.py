@@ -163,7 +163,9 @@ app_license = "mit"
 # 	"frappe.desk.doctype.event.event.get_events": "enfono_hr.event.get_events"
 # }
 override_whitelisted_methods = {
-     "frappe.core.doctype.user.user.login": "enfono_hr.api.custom_login"
+     "frappe.core.doctype.user.user.login": "enfono_hr.api.custom_login",
+     "frappe.core.doctype.user.user.logout": "enfono_hr.api.custom_logout"
+
 }
 
 # each overriding function accepts a `data` argument;
