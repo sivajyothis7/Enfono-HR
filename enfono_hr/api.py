@@ -1,61 +1,81 @@
 import frappe
 from frappe import _
-
-
+from frappe.auth import LoginManager
+from frappe.utils import now_datetime
 
 @frappe.whitelist(allow_guest=True)
-def custom_login(mobile_number=None, password=None):
+def custom_login(username=None, password=None):
     try:
-        frappe.logger().info(f"Attempting login for mobile number: {mobile_number}")
+        frappe.logger().info(f"Attempting login for username: {username}")
 
-        if not mobile_number or not password:
-            frappe.local.response["http_status_code"] = 404
-            frappe.local.response["message"] = _("Invalid mobile number or password.")
-            return
+        def format_response(message, status_code, status_message, **extra_fields):
+            frappe.local.response["http_status_code"] = status_code
+            return {
+                "message": message,
+                "status_code": status_code,
+                "status_message": status_message,
+                **extra_fields
+            }
 
-        user = frappe.db.get_value("User", {"mobile_no": mobile_number}, ["name", "enabled", "email"], as_dict=True)
+        if not username or not password:
+            return format_response(
+                message="Invalid login credentials",
+                status_code=401,
+                status_message="Invalid username/password"
+            )
+
+        user = frappe.db.get_value("User", {"mobile_no": username}, ["name", "enabled", "email"], as_dict=True)
         if not user or not user["enabled"]:
-            frappe.local.response["http_status_code"] = 404
-            frappe.local.response["message"] = _("Invalid mobile number or password.")
-            return
+            return format_response(
+                message="Invalid login credentials",
+                status_code=401,
+                status_message="Invalid username/password"
+            )
 
         try:
             login_manager = frappe.auth.LoginManager()
             login_manager.authenticate(user=user["email"], pwd=password)
             login_manager.post_login()
         except frappe.exceptions.AuthenticationError:
-            frappe.local.response["http_status_code"] = 404
-            frappe.local.response["message"] = _("Invalid mobile number or password.")
-            return
+            return format_response(
+                message="Invalid login credentials",
+                status_code=401,
+                status_message="Invalid username/password"
+            )
 
-        user_doc = frappe.get_doc('User', frappe.session.user)
+        user_doc = frappe.get_doc("User", frappe.session.user)
         api_secret = generate_keys(user_doc)
 
         employee_id = frappe.db.get_value("Employee", {"user_id": user_doc.name})
-
         if not employee_id:
-            frappe.local.response["http_status_code"] = 404
-            frappe.local.response["message"] = _("User is not linked to any Employee record.")
-            return
+            return format_response(
+                message="User is not linked to any Employee record.",
+                status_code=401,
+                status_message="Invalid username/password"
+            )
 
-        frappe.local.response["message"] = {
-            "success_key": 1,
-            "message": _("Authentication successful."),
-            "sid": frappe.session.sid,
-            "username": user_doc.username or user_doc.first_name,
-            "email": user_doc.email,
-            "mobile_number": user_doc.mobile_no,
-            "employee_id": employee_id,
-            "api_key": user_doc.api_key,
-            "api_secret": api_secret
-        }
+        return format_response(
+            message="Authentication successful.",
+            status_code=200,
+            status_message="Login success",
+            sid=frappe.session.sid,
+            email=user_doc.email,
+            mobile_number=user_doc.mobile_no,
+            employee_id=employee_id,
+            api_key=user_doc.api_key,
+            api_secret=api_secret
+        )
+
     except Exception as e:
-        frappe.logger().error(f"Login failed for mobile number: {mobile_number}. Error: {str(e)}")
-        frappe.local.response["http_status_code"] = 404
-        frappe.local.response["message"] = _("Invalid mobile number or password.")
+        frappe.logger().error(f"Login failed for username: {username}. Error: {str(e)}")
+        frappe.local.response["http_status_code"] = 401
+        return {
+            "message": "Something went wrong",
+            "status_code": 401,
+            "status_message": "Invalid username/password"
+        }
 
-
-
+    
 
 
 def generate_keys(user):
@@ -72,42 +92,68 @@ def generate_keys(user):
     frappe.logger().info(f"Generated API Key: {user.api_key}, API Secret: {api_secret}")
     return api_secret
 
+
 @frappe.whitelist(allow_guest=True)
 def custom_logout():
     try:
+        def format_response(message, status_code, status_message):
+            return {
+                "message": message,
+                "status_code": status_code,
+                "status_message": status_message
+            }
+
         if frappe.session.user == "Guest":
-            frappe.local.response["http_status_code"] = 403
-            frappe.local.response["message"] = _("You are not logged in.")
-            return
+            return format_response(
+                message="You are not logged in.",
+                status_code=401,
+                status_message="Guest user cannot logout"
+            )
 
         frappe.logger().info(f"Logging out user: {frappe.session.user}")
-
         frappe.local.login_manager.logout()
 
-        frappe.local.response["message"] = {
-            "success_key": 1,
-            "message": _("Logged out successfully.")
-        }
+        return format_response(
+            message="Logged out successfully.",
+            status_code=200,
+            status_message="Logout success"
+        )
+
     except Exception as e:
         frappe.logger().error(f"Logout failed. Error: {str(e)}")
-        frappe.local.response["http_status_code"] = 500
-        frappe.local.response["message"] = _("Logout failed.")
+        return format_response(
+            message="Logout failed.",
+            status_code=500,
+            status_message="Server error during logout"
+        )
+
 
 
 @frappe.whitelist()
 def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=None):
-    from frappe.utils import now_datetime
-
     try:
+        def format_response(message, status_code, status_message, **extra_fields):
+            frappe.local.response["http_status_code"] = status_code 
+            return {
+                "message": message,
+                "status_code": status_code,
+                "status_message": status_message,
+                **extra_fields
+            }
+
         if not employee:
-            frappe.local.response["http_status_code"] = 400
-            frappe.local.response["message"] = _("Missing employee.")
-            return
+            return format_response(
+                message="Missing employee.",
+                status_code=401,
+                status_message="Employee ID is required"
+            )
 
         if latitude is None or longitude is None:
-            frappe.local.response["http_status_code"] = 400
-            frappe.local.response["message"] = _("Location data (latitude and longitude) is required.")
-            return
+            return format_response(
+                message="Location data is required.",
+                status_code=401,
+                status_message="Latitude and longitude are mandatory"
+            )
 
         if not timestamp:
             timestamp = now_datetime()
@@ -120,11 +166,9 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
             limit=1
         )
 
-        if not last_checkin:
-            next_log_type = "IN"
-        else:
-            last_type = last_checkin[0]["log_type"]
-            next_log_type = "OUT" if last_type == "IN" else "IN"
+        next_log_type = "IN" if not last_checkin else (
+            "OUT" if last_checkin[0]["log_type"] == "IN" else "IN"
+        )
 
         checkin = frappe.get_doc({
             "doctype": "Employee Checkin",
@@ -137,14 +181,19 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
         checkin.insert(ignore_permissions=True)
         frappe.db.commit()
 
-        frappe.local.response["message"] = {
-            "success_key": 1,
-            "message": _("{} recorded successfully.").format(next_log_type),
-            "checkin_id": checkin.name,
-            "log_type": next_log_type
-        }
+        return format_response(
+            message=f"{next_log_type} recorded successfully.",
+            status_code=200,
+            status_message="Checkin successful",
+            checkin_id=checkin.name,
+            log_type=next_log_type
+        )
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Smart Checkin API Error")
-        frappe.local.response["http_status_code"] = 500
-        frappe.local.response["message"] = _("Failed to record checkin.")
+        frappe.local.response["http_status_code"] = 401
+        return {
+            "message": "Failed to record checkin.",
+            "status_code": 401,
+            "status_message": "Internal Server Error"
+        }
