@@ -1,21 +1,21 @@
 import frappe
-from frappe import _
 from frappe.auth import LoginManager
 from frappe.utils import now_datetime
+
+
 
 @frappe.whitelist(allow_guest=True)
 def custom_login(username=None, password=None):
     try:
-        frappe.logger().info(f"Attempting login for username: {username}")
-
-        def send_response(status_code, status_message, **extra_fields):
+        def send_response(message, status_code, status_message, **extra_fields):
             frappe.local.response["http_status_code"] = status_code
             frappe.local.response.update({
+                "message": message,
                 "status_code": status_code,
                 "status_message": status_message,
                 **extra_fields
             })
-            return None
+            return None 
 
         if not username or not password:
             return send_response(
@@ -25,7 +25,7 @@ def custom_login(username=None, password=None):
             )
 
         user = frappe.db.get_value("User", {"mobile_no": username}, ["name", "enabled", "email"], as_dict=True)
-        if not user or not user["enabled"]:
+        if not user or not user.enabled:
             return send_response(
                 message="Invalid login credentials",
                 status_code=401,
@@ -33,13 +33,9 @@ def custom_login(username=None, password=None):
             )
 
         try:
-            login_manager = frappe.auth.LoginManager()
+            login_manager = LoginManager()
             login_manager.authenticate(user=user["email"], pwd=password)
             login_manager.post_login()
-
-            for key in ["message", "home_page", "full_name"]:
-                frappe.local.response.pop(key, None)
-
         except frappe.exceptions.AuthenticationError:
             return send_response(
                 message="Invalid login credentials",
@@ -72,14 +68,13 @@ def custom_login(username=None, password=None):
 
     except Exception as e:
         frappe.logger().error(f"Login failed for username: {username}. Error: {str(e)}")
-        frappe.local.response["http_status_code"] = 401
+        frappe.local.response["http_status_code"] = 500
         frappe.local.response.update({
             "message": "Something went wrong",
-            "status_code": 401,
-            "status_message": "Invalid username/password"
+            "status_code": 500,
+            "status_message": "Server Error"
         })
         return None
-
 
 def generate_keys(user):
     """
@@ -96,40 +91,44 @@ def generate_keys(user):
     return api_secret
 
 
+
 @frappe.whitelist(allow_guest=True)
 def custom_logout():
     try:
-        def send_response(status_code, status_message, message):
+        def send_response(message, status_code, status_message):
             frappe.local.response["http_status_code"] = status_code
             frappe.local.response.update({
                 "message": message,
                 "status_code": status_code,
                 "status_message": status_message
             })
+            return None
 
         if frappe.session.user == "Guest":
             return send_response(
                 message="You are not logged in.",
                 status_code=401,
-                status_message="Guest user cannot logout",
+                status_message="Guest user cannot logout"
             )
 
-        frappe.logger().info(f"Logging out user: {frappe.session.user}")
         frappe.local.login_manager.logout()
+        frappe.db.commit()
 
         return send_response(
             message="Logged out successfully.",
             status_code=200,
-            status_message="Logout success",
+            status_message="Logout success"
         )
 
     except Exception as e:
         frappe.logger().error(f"Logout failed. Error: {str(e)}")
-        return send_response(
-            message="Logout failed.",
-            status_code=500,
-            status_message="Server error during logout",
-        )
+        frappe.local.response["http_status_code"] = 500
+        frappe.local.response.update({
+            "message": "Something went wrong during logout",
+            "status_code": 500,
+            "status_message": "Server Error"
+        })
+        return None
 
 
 @frappe.whitelist()
