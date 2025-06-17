@@ -63,9 +63,7 @@ def custom_login(username=None, password=None):
             mobile_number=user_doc.mobile_no,
             employee_id=employee_id,
             api_key=user_doc.api_key,
-            api_secret=api_secret,
-            home_page="/app",
-            full_name=user_doc.full_name
+            api_secret=api_secret
         )
 
     except Exception as e:
@@ -77,6 +75,7 @@ def custom_login(username=None, password=None):
             "status_message": "Server Error"
         })
         return None
+        
 
 def generate_keys(user):
     """
