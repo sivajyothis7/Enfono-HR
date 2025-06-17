@@ -19,6 +19,7 @@ def custom_login(username=None, password=None):
 
         if not username or not password:
             return send_response(
+                message="Invalid login credentials",
                 status_code=401,
                 status_message="Invalid username/password"
             )
@@ -26,6 +27,7 @@ def custom_login(username=None, password=None):
         user = frappe.db.get_value("User", {"mobile_no": username}, ["name", "enabled", "email"], as_dict=True)
         if not user or not user["enabled"]:
             return send_response(
+                message="Invalid login credentials",
                 status_code=401,
                 status_message="Invalid username/password"
             )
@@ -40,6 +42,7 @@ def custom_login(username=None, password=None):
 
         except frappe.exceptions.AuthenticationError:
             return send_response(
+                message="Invalid login credentials",
                 status_code=401,
                 status_message="Invalid username/password"
             )
@@ -50,11 +53,13 @@ def custom_login(username=None, password=None):
         employee_id = frappe.db.get_value("Employee", {"user_id": user_doc.name})
         if not employee_id:
             return send_response(
+                message="User is not linked to any Employee record.",
                 status_code=401,
                 status_message="Invalid username/password"
             )
 
         return send_response(
+            message="Authentication successful.",
             status_code=200,
             status_message="Login success",
             sid=frappe.session.sid,
@@ -69,6 +74,7 @@ def custom_login(username=None, password=None):
         frappe.logger().error(f"Login failed for username: {username}. Error: {str(e)}")
         frappe.local.response["http_status_code"] = 401
         frappe.local.response.update({
+            "message": "Something went wrong",
             "status_code": 401,
             "status_message": "Invalid username/password"
         })
@@ -103,26 +109,26 @@ def custom_logout():
 
         if frappe.session.user == "Guest":
             return send_response(
+                message="You are not logged in.",
                 status_code=401,
                 status_message="Guest user cannot logout",
-                message="You are not logged in."
             )
 
         frappe.logger().info(f"Logging out user: {frappe.session.user}")
         frappe.local.login_manager.logout()
 
         return send_response(
+            message="Logged out successfully.",
             status_code=200,
             status_message="Logout success",
-            message="Logged out successfully."
         )
 
     except Exception as e:
         frappe.logger().error(f"Logout failed. Error: {str(e)}")
         return send_response(
+            message="Logout failed.",
             status_code=500,
             status_message="Server error during logout",
-            message="Logout failed."
         )
 
 
@@ -140,16 +146,16 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
 
         if not employee:
             return send_response(
+                message="Missing employee.",
                 status_code=401,
                 status_message="Employee ID is required",
-                message="Missing employee."
             )
 
         if latitude is None or longitude is None:
             return send_response(
+                message="Location data is required.",
                 status_code=401,
                 status_message="Latitude and longitude are mandatory",
-                message="Location data is required."
             )
 
         if not timestamp:
@@ -179,9 +185,9 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
         frappe.db.commit()
 
         return send_response(
+            message=f"{next_log_type} recorded successfully.",
             status_code=200,
             status_message="Checkin successful",
-            message=f"{next_log_type} recorded successfully.",
             checkin_id=checkin.name,
             log_type=next_log_type
         )
@@ -189,7 +195,7 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Smart Checkin API Error")
         return send_response(
+            message="Failed to record checkin.",
             status_code=500,
             status_message="Same Time Log",
-            message="Failed to record checkin."
         )
