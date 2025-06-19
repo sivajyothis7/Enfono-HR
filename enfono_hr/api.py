@@ -1,6 +1,7 @@
 import frappe
 from frappe.auth import LoginManager
 from frappe.utils import now_datetime
+from frappe.utils import now_datetime, add_days
 
 
 
@@ -198,4 +199,68 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
             message="Failed to record checkin.",
             status_code=500,
             status_message="Same Time Log",
+        )
+
+
+
+
+
+@frappe.whitelist(allow_guest=True)
+def get_employee_checkins():
+    def send_response(message, status_code, status_message, **extra):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "message": message,
+            "status_code": status_code,
+            "status_message": status_message,
+            **extra
+        })
+        return None
+
+    try:
+        if frappe.session.user == "Guest":
+            return send_response(
+                message="Authentication required.",
+                status_code=401,
+                status_message="Unauthorized"
+            )
+
+        user = frappe.session.user
+        employee_id = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee_id:
+            return send_response(
+                message="No employee linked to this user.",
+                status_code=404,
+                status_message="Employee not found"
+            )
+
+        to_date = now_datetime().date()
+        from_date = add_days(to_date, -7)
+
+        records = frappe.get_all(
+            "Employee Checkin",
+            filters={
+                "employee": employee_id,
+                "time": ["between", [from_date, to_date]]
+            },
+            fields=["name", "time", "log_type"],
+            order_by="time desc"
+        )
+
+        return send_response(
+            message="Check-ins fetched successfully.",
+            status_code=200,
+            status_message="Success",
+            employee_id=employee_id,
+            from_date=str(from_date),
+            to_date=str(to_date),
+            records=records
+        )
+
+    except Exception as e:
+        frappe.log_error(str(e), "Checkin Fetch Failed")
+        return send_response(
+            message="Something went wrong.",
+            status_code=500,
+            status_message="Internal Server Error"
         )
