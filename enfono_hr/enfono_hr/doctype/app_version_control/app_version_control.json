@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-06-19 13:55:21.407806",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "latest_android_version",
+  "android_link",
+  "column_break_jdrz",
+  "latest_ios_version",
+  "ios_link"
+ ],
+ "fields": [
+  {
+   "fieldname": "latest_android_version",
+   "fieldtype": "Data",
+   "label": "Latest Android Version"
+  },
+  {
+   "fieldname": "column_break_jdrz",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "latest_ios_version",
+   "fieldtype": "Data",
+   "label": "Latest iOS Version"
+  },
+  {
+   "fieldname": "android_link",
+   "fieldtype": "Data",
+   "label": "Google Play Store Link"
+  },
+  {
+   "fieldname": "ios_link",
+   "fieldtype": "Data",
+   "label": "iOS App Store Link"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-06-19 14:02:27.113122",
+ "modified_by": "Administrator",
+ "module": "Enfono HR",
+ "name": "App Version Control",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

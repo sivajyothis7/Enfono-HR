@@ -347,3 +347,19 @@ def get_last_checkin_status():
             status_code=500,
             status_message="Internal Server Error"
         )
+
+
+
+
+@frappe.whitelist(allow_guest=True)
+def get_app_version():
+    doc = frappe.get_single("App Version Control")
+
+    frappe.local.response.update({
+        "status_code": 200,
+        "status_message": "Success",
+        "latest_android_version": getattr(doc, "latest_android_version", None),
+        "latest_ios_version": getattr(doc, "latest_ios_version", None),
+        "android_link": getattr(doc, "android_link", None),
+        "ios_link": getattr(doc, "ios_link", None)
+    })
