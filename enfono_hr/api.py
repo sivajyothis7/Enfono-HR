@@ -133,6 +133,7 @@ def custom_logout():
         return None
 
 
+
 @frappe.whitelist()
 def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=None):
     try:
@@ -145,18 +146,36 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
                 **extra_fields
             })
 
+        if frappe.session.user == "Guest":
+            return send_response(
+                message="Authentication required.",
+                status_code=401,
+                status_message="Unauthorized"
+            )
+
+        
+
         if not employee:
             return send_response(
-                message="Missing employee.",
-                status_code=401,
-                status_message="Employee ID is required",
+                message="No employee record linked to the current user.",
+                status_code=404,
+                status_message="Employee not found"
             )
+
+        if not frappe.db.exists("Employee", employee):
+            return send_response(
+                message="Invalid employee ID.",
+                status_code=404,
+                status_message="Employee not found"
+            )
+
+        
 
         if latitude is None or longitude is None:
             return send_response(
                 message="Location data is required.",
-                status_code=401,
-                status_message="Latitude and longitude are mandatory",
+                status_code=400,
+                status_message="Latitude and longitude are mandatory"
             )
 
         if not timestamp:
@@ -190,7 +209,8 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
             status_code=200,
             status_message="Checkin successful",
             checkin_id=checkin.name,
-            log_type=next_log_type
+            log_type=next_log_type,
+            next_action="Check Out" if next_log_type == "IN" else "Check In"
         )
 
     except Exception as e:
@@ -198,9 +218,8 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
         return send_response(
             message="Failed to record checkin.",
             status_code=500,
-            status_message="Same Time Log",
+            status_message="Same Time Log"
         )
-
 
 
 
@@ -261,6 +280,70 @@ def get_employee_checkins():
         frappe.log_error(str(e), "Checkin Fetch Failed")
         return send_response(
             message="Something went wrong.",
+            status_code=500,
+            status_message="Internal Server Error"
+        )
+
+
+
+@frappe.whitelist()
+def get_last_checkin_status():
+    def send_response(message, status_code, status_message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "message": message,
+            "status_code": status_code,
+            "status_message": status_message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        if frappe.session.user == "Guest":
+            return send_response(
+                message="Authentication required.",
+                status_code=401,
+                status_message="Unauthorized"
+            )
+
+        user = frappe.session.user
+        employee_id = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee_id:
+            return send_response(
+                message="No employee linked to this user.",
+                status_code=404,
+                status_message="Employee not found"
+            )
+
+        last_checkin = frappe.db.get_all(
+            "Employee Checkin",
+            filters={"employee": employee_id},
+            fields=["name", "log_type", "time"],
+            order_by="creation desc",
+            limit=1
+        )
+
+        if not last_checkin:
+            current_status = "No check-ins yet"
+            next_action = "Check In"
+        else:
+            current_status = last_checkin[0]["log_type"]
+            next_action = "Check Out" if current_status == "IN" else "Check In"
+
+        return send_response(
+            message="Last check-in status fetched successfully.",
+            status_code=200,
+            status_message="Success",
+            employee_id=employee_id,
+            last_log_type=current_status,
+            last_checkin_time=str(last_checkin[0]["time"]) if last_checkin else None,
+            next_action=next_action
+        )
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Fetch Checkin Status Error")
+        return send_response(
+            message="Failed to fetch last check-in status.",
             status_code=500,
             status_message="Internal Server Error"
         )
