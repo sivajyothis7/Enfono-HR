@@ -286,7 +286,7 @@ def get_employee_checkins():
 
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_last_checkin_status():
     def send_response(message, status_code, status_message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
