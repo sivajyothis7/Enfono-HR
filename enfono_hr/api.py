@@ -1,9 +1,11 @@
 import frappe
 from frappe.auth import LoginManager
-from frappe.utils import now_datetime
+from frappe.utils import now_datetime,getdate
 from frappe.utils import now_datetime, add_days
+import json
 
 
+#####Login#####
 
 @frappe.whitelist(allow_guest=True)
 def custom_login(username=None, password=None):
@@ -132,7 +134,7 @@ def custom_logout():
         })
         return None
 
-
+#####Post Checkin#####
 
 @frappe.whitelist()
 def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=None):
@@ -222,7 +224,7 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
         )
 
 
-
+#####Checkin Records#####
 
 @frappe.whitelist(allow_guest=True)
 def get_employee_checkins():
@@ -284,7 +286,7 @@ def get_employee_checkins():
             status_message="Internal Server Error"
         )
 
-
+#####Last Checkin Status#####
 
 @frappe.whitelist(allow_guest=True)
 def get_last_checkin_status():
@@ -349,7 +351,7 @@ def get_last_checkin_status():
         )
 
 
-
+#####APP Version#####
 
 @frappe.whitelist(allow_guest=True)
 def get_app_version():
@@ -363,3 +365,248 @@ def get_app_version():
         "android_link": getattr(doc, "android_link", None),
         "ios_link": getattr(doc, "ios_link", None)
     })
+
+
+#####Shift Type List#####
+
+@frappe.whitelist(allow_guest=True)
+def get_available_shift_types():
+    try:
+        shift_types = frappe.get_all(
+            "Shift Type",
+            fields=["name", "start_time", "end_time"]
+        )
+
+        frappe.local.response["http_status_code"] = 200
+        frappe.local.response.update({
+            "status_code": 200,
+            "status_message": "Success",
+            "message": "Shift types fetched successfully.",
+            "shift_types": [
+                {
+                    "name": s.name,
+                    "start_time": str(s.start_time),
+                    "end_time": str(s.end_time)
+                } for s in shift_types
+            ]
+        })
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Fetch Shift Types Error")
+        frappe.local.response["http_status_code"] = 500
+        frappe.local.response.update({
+            "status_code": 500,
+            "status_message": "Error",
+            "message": "Failed to fetch shift types.",
+            "shift_types": []
+        })
+
+#####Create Shift Request#####
+
+
+
+@frappe.whitelist()
+def create_shift_request(shift_type, from_date, to_date):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "You must be logged in.")
+
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No Employee record linked to the user.")
+
+        if not frappe.db.exists("Shift Type", shift_type):
+            return send_response(400, "Invalid", "Requested shift type does not exist.")
+
+        if not from_date or not to_date:
+            return send_response(400, "Missing Dates", "From and To dates are required.")
+
+        from_date = getdate(from_date)
+        to_date = getdate(to_date)
+
+        if from_date > to_date:
+            return send_response(400, "Invalid Dates", "From Date cannot be after To Date.")
+
+        if from_date < getdate():
+            return send_response(400, "Invalid Dates", "Shift request cannot start in the past.")
+
+        overlap_exists = frappe.db.exists("Shift Request", {
+            "employee": employee,
+            "status": ["in", ["Approved", "Draft"]],
+            "from_date": ["<=", to_date],
+            "to_date": [">=", from_date]
+        })
+
+        if overlap_exists:
+            return send_response(409, "Conflict", "Overlaps with an existing shift request.")
+
+        approver = frappe.db.get_value("Employee", employee, "shift_request_approver")
+        if not approver:
+            return send_response(400, "Missing Approver", "No Shift Request Approver set for this employee.")
+
+        doc = frappe.get_doc({
+            "doctype": "Shift Request",
+            "employee": employee,
+            "shift_type": shift_type,
+            "from_date": from_date,
+            "to_date": to_date,
+            "shift_request_approver": approver,
+            "status": "Draft"
+        })
+        doc.insert()
+        frappe.db.commit()
+
+        return send_response(
+            200,
+            "Success",
+            "Shift request created successfully.",
+            request_id=doc.name,
+            shift_type=doc.shift_type,
+            from_date=str(doc.from_date),
+            to_date=str(doc.to_date),
+            status=doc.status
+        )
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Shift Request Creation Failed")
+        return send_response(500, "Error", "Something went wrong.")
+
+#####Employee Shift Requests List####
+
+@frappe.whitelist()
+def get_my_shift_requests():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No employee linked to this user.")
+
+        shift_requests = frappe.get_all(
+            "Shift Request",
+            filters={"employee": employee},
+            fields=["name", "shift_type", "from_date", "to_date", "status"],
+            order_by="creation desc"
+        )
+
+        return send_response(
+            200,
+            "Success",
+            "Shift requests fetched.",
+            employee_id=employee,
+            shift_requests=shift_requests
+        )
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get My Shift Requests Failed")
+        return send_response(500, "Error", "Something went wrong.")
+
+
+
+######Team Shift Requests List#####
+@frappe.whitelist()
+def get_team_shift_requests():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No employee linked to this user.")
+
+        requests = frappe.get_all(
+            "Shift Request",
+            filters={
+                "approver": user,
+                "employee": ["!=", employee],
+                "status": "Draft"
+            },
+            fields=["name", "employee", "shift_type", "from_date", "to_date", "status"],
+            order_by="creation desc"
+        )
+
+        return send_response(
+            200,
+            "Success",
+            "Pending shift requests fetched.",
+            shift_requests=requests
+        )
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get Team Shift Requests Failed")
+        return send_response(500, "Error", "Something went wrong.")
+
+
+#####Approve_or_reject_shift_request#####
+
+@frappe.whitelist()
+def approve_or_reject_shift_request(name, action):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        if action not in ["Approved", "Rejected"]:
+            return send_response(400, "Invalid Action", "Only 'Approved' or 'Rejected' actions are allowed.")
+
+        doc = frappe.get_doc("Shift Request", name)
+
+        employee_user = frappe.db.get_value("Employee", doc.employee, "user_id")
+        if user == employee_user:
+            return send_response(403, "Forbidden", "You cannot approve your own request.")
+
+        if doc.approver != user:
+            return send_response(403, "Forbidden", "You are not authorized to approve this request.")
+
+        doc.status = action
+        doc.save()
+
+        if doc.docstatus == 0:
+            doc.submit()
+
+        return send_response(200, "Success", f"Shift request {action.lower()} successfully.", request_id=doc.name)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Shift Request Approval Failed")
+        return send_response(500, "Error", "Something went wrong.")
