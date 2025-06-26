@@ -671,17 +671,20 @@ def send_otp(mobile_no):
     mobile_no = mobile_no.strip()
 
     if not mobile_no:
+        frappe.local.response["http_status_code"] = 400
         frappe.response["message"] = "Mobile number is required"
         frappe.response["status_code"] = 400
         return
 
     if not re.fullmatch(r'[6-9]\d{9}', mobile_no):
+        frappe.local.response["http_status_code"] = 400
         frappe.response["message"] = "Invalid mobile number format"
         frappe.response["status_code"] = 400
         return
 
     user_id = frappe.db.get_value("User", {"mobile_no": mobile_no})
     if not user_id:
+        frappe.local.response["http_status_code"] = 404
         frappe.response["message"] = "Mobile number not registered"
         frappe.response["status_code"] = 404
         frappe.response["mobile_no"] = mobile_no
@@ -700,6 +703,7 @@ def send_otp(mobile_no):
 
         if response_code != "1701":
             error_message = DIGIMILES_RESPONSE_CODES.get(response_code, "Unknown error from Digimiles")
+            frappe.local.response["http_status_code"] = 500
             frappe.response["message"] = f"Failed to send OTP: {error_message}"
             frappe.response["digimiles_response"] = response_text
             frappe.response["status_code"] = 500
@@ -708,6 +712,7 @@ def send_otp(mobile_no):
 
         frappe.cache().set_value(f"otp:{mobile_no}", otp, expires_in_sec=600)
 
+        frappe.local.response["http_status_code"] = 200
         frappe.response["message"] = "OTP sent successfully"
         frappe.response["status_code"] = 200
         frappe.response["mobile_no"] = mobile_no
@@ -715,6 +720,7 @@ def send_otp(mobile_no):
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Digimiles OTP Send Failed")
+        frappe.local.response["http_status_code"] = 500
         frappe.response["message"] = "Internal error while sending OTP"
         frappe.response["status_code"] = 500
         frappe.response["mobile_no"] = mobile_no
@@ -722,70 +728,61 @@ def send_otp(mobile_no):
 
 
 @frappe.whitelist(allow_guest=True)
-def verify_otp(mobile_no, otp):
+def verify_and_reset_password(mobile_no, otp, new_password=None, confirm_password=None):
     mobile_no = mobile_no.strip()
+    otp = otp.strip()
 
     if not (mobile_no and otp):
+        frappe.local.response["http_status_code"] = 400
         frappe.response["message"] = "Mobile number and OTP are required"
         frappe.response["status_code"] = 400
         return
 
     cached_otp = frappe.cache().get_value(f"otp:{mobile_no}")
-
     if not cached_otp:
+        frappe.local.response["http_status_code"] = 410
         frappe.response["message"] = "OTP expired or not found"
         frappe.response["status_code"] = 410
-        frappe.response["mobile_no"] = mobile_no
         return
 
     if cached_otp != otp:
+        frappe.local.response["http_status_code"] = 401
         frappe.response["message"] = "Invalid OTP"
         frappe.response["status_code"] = 401
-        frappe.response["mobile_no"] = mobile_no
         return
 
-    frappe.cache().set_value(f"otp_verified:{mobile_no}", True, expires_in_sec=600)
-
-    frappe.response["message"] = "OTP verified"
-    frappe.response["status_code"] = 200
-    frappe.response["mobile_no"] = mobile_no
-
-
-
-@frappe.whitelist(allow_guest=True)
-def reset_password_with_otp(mobile_no, new_password, confirm_password):
-    mobile_no = mobile_no.strip()
-
-    if not (mobile_no and new_password and confirm_password):
-        frappe.response["message"] = "All fields are required"
-        frappe.response["status_code"] = 400
-        return
-
-    if new_password != confirm_password:
-        frappe.response["message"] = "Passwords do not match"
-        frappe.response["status_code"] = 422
-        frappe.response["mobile_no"] = mobile_no
+    if not new_password:
+        frappe.cache().set_value(f"otp_verified:{mobile_no}", True, expires_in_sec=600)
+        frappe.local.response["http_status_code"] = 200
+        frappe.response["message"] = "OTP verified"
+        frappe.response["status_code"] = 200
         return
 
     is_verified = frappe.cache().get_value(f"otp_verified:{mobile_no}")
     if not is_verified:
+        frappe.local.response["http_status_code"] = 403
         frappe.response["message"] = "OTP not verified"
         frappe.response["status_code"] = 403
-        frappe.response["mobile_no"] = mobile_no
+        return
+
+    if not confirm_password or new_password != confirm_password:
+        frappe.local.response["http_status_code"] = 422
+        frappe.response["message"] = "Passwords do not match"
+        frappe.response["status_code"] = 422
         return
 
     user_id = frappe.db.get_value("User", {"mobile_no": mobile_no})
     if not user_id:
+        frappe.local.response["http_status_code"] = 404
         frappe.response["message"] = "User not found"
         frappe.response["status_code"] = 404
-        frappe.response["mobile_no"] = mobile_no
         return
 
     update_password(user_id, new_password)
+
     frappe.cache().delete_value(f"otp:{mobile_no}")
     frappe.cache().delete_value(f"otp_verified:{mobile_no}")
 
+    frappe.local.response["http_status_code"] = 200
     frappe.response["message"] = "Password reset successful"
     frappe.response["status_code"] = 200
-    frappe.response["mobile_no"] = mobile_no
-
