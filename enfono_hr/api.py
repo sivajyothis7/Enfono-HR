@@ -819,6 +819,72 @@ def approve_or_reject_leave_application(application_id, action):
         return send_response(500, "Error", "Something went wrong.")
 
 
+#####Attendance Request#####
+
+
+@frappe.whitelist()
+def create_attendance_request(from_date, to_date, reason, half_day=False, half_day_date=None):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No employee linked to this user.")
+
+        if not from_date or not to_date or not reason:
+            return send_response(400, "Bad Request", "From Date, To Date, and Reason are required.")
+
+        from_date = getdate(from_date)
+        to_date = getdate(to_date)
+
+        if from_date > to_date:
+            return send_response(400, "Invalid Dates", "From Date cannot be after To Date.")
+
+        if half_day and not half_day_date:
+            return send_response(400, "Missing Field", "Half Day Date is required if Half Day is selected.")
+        
+        if half_day and (getdate(half_day_date) < from_date or getdate(half_day_date) > to_date):
+            return send_response(400, "Invalid Date", "Half Day Date must be within the request range.")
+
+        if frappe.db.exists("Attendance Request", {
+            "employee": employee,
+            "from_date": ["<=", to_date],
+            "to_date": [">=", from_date]
+        }):
+            return send_response(409, "Conflict", "Overlapping attendance request already exists.")
+
+        doc = frappe.get_doc({
+            "doctype": "Attendance Request",
+            "employee": employee,
+            "from_date": from_date,
+            "to_date": to_date,
+            "reason": reason,
+            "half_day": half_day,
+            "half_day_date": getdate(half_day_date) if half_day else None
+        })
+        doc.insert()
+        frappe.db.commit()
+
+        return send_response(200, "Success", "Attendance request created.", request_id=doc.name)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Attendance Request Creation Failed")
+        return send_response(500, "Error", "Something went wrong.")
+
+
+
 ####Forgot Password- OTP####
 
 
