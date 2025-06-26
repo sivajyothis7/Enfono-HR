@@ -616,6 +616,209 @@ def approve_or_reject_shift_request(name, action):
         return send_response(500, "Error", "Something went wrong.")
 
 
+#####LEAVE APPLICATION API####
+
+######View Leave Types#####
+
+@frappe.whitelist(allow_guest=True)
+def get_available_leave_types():
+    try:
+        leave_types = frappe.get_all(
+            "Leave Type",
+            fields=["name", "max_leaves_allowed"]
+        )
+
+        frappe.local.response["http_status_code"] = 200
+        frappe.local.response.update({
+            "status_code": 200,
+            "status_message": "Success",
+            "message": "Leave types fetched successfully.",
+            "leave_types": leave_types
+        })
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Fetch Leave Types Error")
+        frappe.local.response["http_status_code"] = 500
+        frappe.local.response.update({
+            "status_code": 500,
+            "status_message": "Error",
+            "message": "Failed to fetch leave types.",
+            "leave_types": []
+        })
+
+
+
+######Create Leave Requests#####
+
+
+@frappe.whitelist()
+def create_leave_application(leave_type, from_date, to_date, half_day=None, half_day_date=None, reason=None):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Login required.")
+
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No employee linked to the user.")
+
+        if not frappe.db.exists("Leave Type", leave_type):
+            return send_response(400, "Invalid", "Leave type does not exist.")
+
+        doc = frappe.get_doc({
+            "doctype": "Leave Application",
+            "employee": employee,
+            "leave_type": leave_type,
+            "from_date": from_date,
+            "to_date": to_date,
+            "half_day": half_day,
+            "half_day_date": half_day_date if half_day else None,
+            "leave_approver": frappe.db.get_value("Employee", employee, "leave_approver"),
+            "status": "Open",
+            "description": reason
+        })
+        doc.insert()
+        frappe.db.commit()
+
+        return send_response(200, "Success", "Leave application submitted.", application_id=doc.name)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Leave Application Failed")
+        return send_response(500, "Error", "Something went wrong.")
+
+
+
+######Employee Leave Requests List#####
+
+
+@frappe.whitelist()
+def get_my_leave_applications():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Login required.")
+
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No employee linked.")
+
+        leave_apps = frappe.get_all(
+            "Leave Application",
+            filters={"employee": employee},
+            fields=["name", "leave_type", "from_date", "to_date", "status"],
+            order_by="creation desc"
+        )
+
+        return send_response(200, "Success", "Leave applications fetched.", leave_applications=leave_apps)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Fetch Leave Applications Failed")
+        return send_response(500, "Error", "Something went wrong.")
+
+
+
+######Team Leave Requests List#####
+
+
+@frappe.whitelist()
+def get_team_leave_applications():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Login required.")
+
+        employees = frappe.get_all("Employee", filters={"leave_approver": user}, pluck="name")
+
+        leave_apps = frappe.get_all(
+            "Leave Application",
+            filters={
+                "employee": ["in", employees],
+                "employee": ["!=", frappe.db.get_value("Employee", {"user_id": user})]
+            },
+            fields=["name", "employee", "leave_type", "from_date", "to_date", "status"],
+            order_by="creation desc"
+        )
+
+        return send_response(200, "Success", "Team leave applications fetched.", team_requests=leave_apps)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Team Leave Applications Failed")
+        return send_response(500, "Error", "Something went wrong.")
+
+
+
+
+######Approve Leave Requests List#####
+
+
+
+@frappe.whitelist()
+def approve_or_reject_leave_application(application_id, action):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Login required.")
+
+        if action not in ["Approved", "Rejected"]:
+            return send_response(400, "Invalid Action", "Action must be 'Approved' or 'Rejected'.")
+
+        doc = frappe.get_doc("Leave Application", application_id)
+
+        employee_user = frappe.db.get_value("Employee", doc.employee, "user_id")
+        if employee_user == user:
+            return send_response(403, "Forbidden", "You can't approve your own request.")
+
+        if doc.leave_approver != user:
+            return send_response(403, "Forbidden", "You are not the assigned approver.")
+
+        doc.status = action
+        doc.save()
+        if doc.docstatus == 0:
+            doc.submit()
+
+        return send_response(200, "Success", f"Leave application {action.lower()} successfully.", application_id=doc.name)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Leave Approval Failed")
+        return send_response(500, "Error", "Something went wrong.")
+
+
 ####Forgot Password- OTP####
 
 
