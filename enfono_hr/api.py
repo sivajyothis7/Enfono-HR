@@ -564,7 +564,6 @@ def get_team_shift_requests():
 
         filters = {
             "approver": user,
-            "status": "Draft"
         }
 
         if employee:
