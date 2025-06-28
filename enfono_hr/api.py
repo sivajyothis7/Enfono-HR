@@ -14,6 +14,7 @@ from hrms.hr.doctype.leave_application.leave_application import get_leave_balanc
 
 
 
+
 #####Login#####
 
 @frappe.whitelist(allow_guest=True)
@@ -412,10 +413,10 @@ def get_available_shift_types():
 #####Create Shift Request#####
 
 
-
-
 @frappe.whitelist()
 def create_shift_request(shift_type, from_date, to_date):
+    from frappe.utils import getdate, nowdate
+
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -453,7 +454,11 @@ def create_shift_request(shift_type, from_date, to_date):
 
         approver = frappe.db.get_value("Employee", employee, "shift_request_approver")
         if not approver:
-            return send_response(400, "Missing Approver", "No Shift Request Approver assigned for this employee.Please Contact HR")
+            return send_response(400, "Missing Approver", "No Shift Request Approver assigned for this employee. Please contact HR.")
+
+        default_shift = frappe.db.get_value("Employee", employee, "default_shift")
+        if default_shift == shift_type:
+            return send_response(400, "Invalid Shift", "You cannot request your default shift.")
 
         overlapping = frappe.db.sql("""
             SELECT name FROM `tabShift Request`
@@ -463,8 +468,6 @@ def create_shift_request(shift_type, from_date, to_date):
         """, (employee, to_date, from_date))
         if overlapping:
             return send_response(409, "Conflict", "This shift request overlaps with an existing request.")
-
-        
 
         doc = frappe.get_doc({
             "doctype": "Shift Request",
@@ -897,6 +900,7 @@ def approve_or_reject_leave_application(application_id, action):
 
 @frappe.whitelist()
 def create_attendance_request(from_date, to_date, reason, half_day=False, half_day_date=None):
+
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -934,28 +938,43 @@ def create_attendance_request(from_date, to_date, reason, half_day=False, half_d
         if frappe.db.exists("Attendance Request", {
             "employee": employee,
             "from_date": ["<=", to_date],
-            "to_date": [">=", from_date]
+            "to_date": [">=", from_date],
+            "docstatus": ["!=", 2]  
         }):
             return send_response(409, "Conflict", "Overlapping attendance request already exists.")
 
-        leave_conflict = frappe.db.sql("""
-            SELECT name FROM `tabLeave Application`
-            WHERE employee = %s AND docstatus = 1
-              AND status != 'Rejected'
-              AND from_date <= %s AND to_date >= %s
-        """, (employee, to_date, from_date))
+        valid_dates = []
+        holiday_list = frappe.db.get_value("Employee", employee, "holiday_list") or ""
 
-        if leave_conflict:
-            return send_response(409, "Conflict", "Leave has already been applied for this date range.")
+        for i in range((to_date - from_date).days + 1):
+            day = add_days(from_date, i)
 
-        attendance_conflict = frappe.db.sql("""
-            SELECT name FROM `tabAttendance`
-            WHERE employee = %s
-              AND attendance_date BETWEEN %s AND %s
-        """, (employee, from_date, to_date))
+            if frappe.db.exists("Attendance", {
+                "employee": employee,
+                "attendance_date": day,
+                "docstatus": ["<", 2]
+            }):
+                continue
 
-        if attendance_conflict:
-            return send_response(409, "Conflict", "Attendance already exists in this date range.")
+            leave = frappe.db.sql("""
+                SELECT name FROM `tabLeave Application`
+                WHERE employee = %s AND docstatus = 1
+                  AND status NOT IN ('Rejected', 'Cancelled')
+                  AND from_date <= %s AND to_date >= %s
+            """, (employee, day, day))
+            if leave:
+                continue
+
+            if holiday_list and frappe.db.exists("Holiday", {
+                "parent": holiday_list,
+                "holiday_date": day
+            }):
+                continue
+
+            valid_dates.append(day)
+
+        if not valid_dates:
+            return send_response(400, "No Valid Dates", "No attendance records can be created. All dates fall on leave, holidays, or already marked.")
 
         doc = frappe.get_doc({
             "doctype": "Attendance Request",
@@ -974,7 +993,6 @@ def create_attendance_request(from_date, to_date, reason, half_day=False, half_d
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Attendance Request Creation Failed")
         return send_response(500, "Error", "Something went wrong.")
-
 
 
 ####Forgot Password- OTP####
