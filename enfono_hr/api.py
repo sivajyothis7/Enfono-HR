@@ -494,6 +494,8 @@ def create_shift_request(shift_type, from_date, to_date):
 @frappe.whitelist()
 def get_my_shift_requests():
     def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
             "status_code": status_code,
@@ -514,7 +516,7 @@ def get_my_shift_requests():
         shift_requests = frappe.get_all(
             "Shift Request",
             filters={"employee": employee},
-            fields=["name", "shift_type", "from_date", "to_date", "status"],
+            fields=["name", "shift_type", "from_date", "to_date", "status", "creation"],
             order_by="creation desc"
         )
 
@@ -526,16 +528,17 @@ def get_my_shift_requests():
             shift_requests=shift_requests
         )
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Get My Shift Requests Failed")
         return send_response(500, "Error", "Something went wrong.")
-
 
 
 ######Team Shift Requests List#####
 @frappe.whitelist()
 def get_team_shift_requests():
     def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
             "status_code": status_code,
@@ -550,17 +553,19 @@ def get_team_shift_requests():
             return send_response(401, "Unauthorized", "Please login first.")
 
         employee = frappe.db.get_value("Employee", {"user_id": user})
-        if not employee:
-            return send_response(404, "Not Found", "No employee linked to this user.")
+
+        filters = {
+            "approver": user,
+            "status": "Draft"
+        }
+
+        if employee:
+            filters["employee"] = ["!=", employee]
 
         requests = frappe.get_all(
             "Shift Request",
-            filters={
-                "approver": user,
-                "employee": ["!=", employee],
-                "status": "Draft"
-            },
-            fields=["name", "employee", "shift_type", "from_date", "to_date", "status"],
+            filters=filters,
+            fields=["name", "employee", "shift_type", "from_date", "to_date", "status", "creation"],
             order_by="creation desc"
         )
 
@@ -571,10 +576,9 @@ def get_team_shift_requests():
             shift_requests=requests
         )
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Get Team Shift Requests Failed")
         return send_response(500, "Error", "Something went wrong.")
-
 
 #####Approve_or_reject_shift_request#####
 
@@ -754,6 +758,8 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
 @frappe.whitelist()
 def get_my_leave_applications():
     def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
             "status_code": status_code,
@@ -774,15 +780,16 @@ def get_my_leave_applications():
         leave_apps = frappe.get_all(
             "Leave Application",
             filters={"employee": employee},
-            fields=["name", "leave_type", "from_date", "to_date", "status"],
+            fields=["name", "leave_type", "from_date", "to_date", "status", "creation"],
             order_by="creation desc"
         )
 
         return send_response(200, "Success", "Leave applications fetched.", leave_applications=leave_apps)
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Fetch Leave Applications Failed")
         return send_response(500, "Error", "Something went wrong.")
+
 
 
 
@@ -792,6 +799,8 @@ def get_my_leave_applications():
 @frappe.whitelist()
 def get_team_leave_applications():
     def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
             "status_code": status_code,
@@ -805,24 +814,31 @@ def get_team_leave_applications():
         if user == "Guest":
             return send_response(401, "Unauthorized", "Login required.")
 
+        current_employee = frappe.db.get_value("Employee", {"user_id": user})
+
         employees = frappe.get_all("Employee", filters={"leave_approver": user}, pluck="name")
+
+        if not employees:
+            return send_response(200, "Success", "No team members found.", team_requests=[])
+
+        if current_employee and current_employee in employees:
+            employees.remove(current_employee)
+
+        if not employees:
+            return send_response(200, "Success", "No team leave requests found.", team_requests=[])
 
         leave_apps = frappe.get_all(
             "Leave Application",
-            filters={
-                "employee": ["in", employees],
-                "employee": ["!=", frappe.db.get_value("Employee", {"user_id": user})]
-            },
-            fields=["name", "employee", "leave_type", "from_date", "to_date", "status"],
+            filters={"employee": ["in", employees]},
+            fields=["name", "employee", "leave_type", "from_date", "to_date", "status", "creation"],
             order_by="creation desc"
         )
 
         return send_response(200, "Success", "Team leave applications fetched.", team_requests=leave_apps)
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Team Leave Applications Failed")
         return send_response(500, "Error", "Something went wrong.")
-
 
 
 
