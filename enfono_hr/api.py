@@ -8,6 +8,10 @@ import requests
 from frappe.utils.password import update_password
 from urllib.parse import quote_plus
 import re
+from frappe.utils import getdate, date_diff
+from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
+
+
 
 #####Login#####
 
@@ -653,6 +657,7 @@ def get_available_leave_types():
 
 @frappe.whitelist()
 def create_leave_application(leave_type, from_date, to_date, half_day=None, half_day_date=None, reason=None):
+
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -667,12 +672,54 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
         if user == "Guest":
             return send_response(401, "Unauthorized", "Login required.")
 
+        if not leave_type or not from_date or not to_date:
+            return send_response(400, "Missing Fields", "Leave type, from date and to date are required.")
+
         employee = frappe.db.get_value("Employee", {"user_id": user})
         if not employee:
             return send_response(404, "Not Found", "No employee linked to the user.")
 
         if not frappe.db.exists("Leave Type", leave_type):
             return send_response(400, "Invalid", "Leave type does not exist.")
+
+        from_dt = getdate(from_date)
+        to_dt = getdate(to_date)
+
+        if from_dt > to_dt:
+            return send_response(400, "Invalid Dates", "From date cannot be after to date.")
+
+        if half_day and half_day_date:
+            half_dt = getdate(half_day_date)
+            if not (from_dt <= half_dt <= to_dt):
+                return send_response(400, "Invalid Half Day Date", "Half-day date must be within the leave date range.")
+
+        allocation = frappe.db.exists("Leave Allocation", {
+            "employee": employee,
+            "leave_type": leave_type,
+            "from_date": ["<=", to_date],
+            "to_date": [">=", from_date],
+            "docstatus": 1
+        })
+        if not allocation:
+            return send_response(400, "Leave Not Allocated", f"Leave type '{leave_type}' is not allocated or active for this period.")
+
+        leave_balance = get_leave_balance_on(employee, leave_type, from_date)
+        requested_days = 0.5 if half_day else date_diff(to_date, from_date) + 1
+
+        if leave_balance < requested_days:
+            return send_response(
+                400,
+                "Insufficient Leave Balance",
+                f"Only {leave_balance} day(s) available, but {requested_days} day(s) requested."
+            )
+
+        overlap = frappe.db.sql("""
+            SELECT name FROM `tabLeave Application`
+            WHERE employee = %s AND docstatus < 2 AND status != 'Rejected'
+              AND (from_date <= %s AND to_date >= %s)
+        """, (employee, to_date, from_date))
+        if overlap:
+            return send_response(409, "Conflict", "Leave application overlaps with an existing one.")
 
         doc = frappe.get_doc({
             "doctype": "Leave Application",
@@ -694,7 +741,6 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Leave Application Failed")
         return send_response(500, "Error", "Something went wrong.")
-
 
 
 ######Employee Leave Requests List#####
