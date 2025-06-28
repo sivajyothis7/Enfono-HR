@@ -839,7 +839,7 @@ def get_team_leave_applications():
             order_by="creation desc"
         )
 
-        return send_response(200, "Success", "Team leave applications fetched.", team_requests=leave_apps)
+        return send_response(200, "Success", "Team leave applications fetched.", leave_applications=leave_apps)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Team Leave Applications Failed")
