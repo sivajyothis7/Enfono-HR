@@ -8,8 +8,9 @@ import requests
 from frappe.utils.password import update_password
 from urllib.parse import quote_plus
 import re
-from frappe.utils import getdate, date_diff
+from frappe.utils import getdate, date_diff, nowdate
 from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
+
 
 
 
@@ -412,6 +413,7 @@ def get_available_shift_types():
 
 
 
+
 @frappe.whitelist()
 def create_shift_request(shift_type, from_date, to_date):
     def send_response(status_code, status_message, message, **extra_fields):
@@ -429,38 +431,47 @@ def create_shift_request(shift_type, from_date, to_date):
         if user == "Guest":
             return send_response(401, "Unauthorized", "You must be logged in.")
 
-        employee = frappe.db.get_value("Employee", {"user_id": user})
-        if not employee:
-            return send_response(404, "Not Found", "No Employee record linked to the user.")
-
-        if not frappe.db.exists("Shift Type", shift_type):
-            return send_response(400, "Invalid", "Requested shift type does not exist.")
-
-        if not from_date or not to_date:
-            return send_response(400, "Missing Dates", "From and To dates are required.")
+        if not shift_type or not from_date or not to_date:
+            return send_response(400, "Missing Fields", "Shift Type, From Date, and To Date are mandatory.")
 
         from_date = getdate(from_date)
         to_date = getdate(to_date)
+        today = getdate(nowdate())
 
         if from_date > to_date:
             return send_response(400, "Invalid Dates", "From Date cannot be after To Date.")
 
-        if from_date < getdate():
+        if from_date < today:
             return send_response(400, "Invalid Dates", "Shift request cannot start in the past.")
 
-        overlap_exists = frappe.db.exists("Shift Request", {
-            "employee": employee,
-            "status": ["in", ["Approved", "Draft"]],
-            "from_date": ["<=", to_date],
-            "to_date": [">=", from_date]
-        })
+        if not frappe.db.exists("Shift Type", shift_type):
+            return send_response(400, "Invalid", f"Shift Type '{shift_type}' does not exist.")
 
-        if overlap_exists:
-            return send_response(409, "Conflict", "Overlaps with an existing shift request.")
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No Employee record linked to the user.")
 
         approver = frappe.db.get_value("Employee", employee, "shift_request_approver")
         if not approver:
-            return send_response(400, "Missing Approver", "No Shift Request Approver set for this employee.")
+            return send_response(400, "Missing Approver", "No Shift Request Approver assigned for this employee.Please Contact HR")
+
+        overlapping = frappe.db.sql("""
+            SELECT name FROM `tabShift Request`
+            WHERE employee = %s
+              AND status IN ('Approved', 'Draft')
+              AND (from_date <= %s AND to_date >= %s)
+        """, (employee, to_date, from_date))
+        if overlapping:
+            return send_response(409, "Conflict", "This shift request overlaps with an existing request.")
+
+        allocation_exists = frappe.db.exists("Shift Assignment", {
+            "employee": employee,
+            "shift_type": shift_type,
+            "start_date": ["<=", to_date],
+            "end_date": [">=", from_date]
+        })
+        if not allocation_exists:
+            return send_response(400, "No Allocation", f"No shift allocation found for the selected period and shift type.Please Contact HR")
 
         doc = frappe.get_doc({
             "doctype": "Shift Request",
@@ -485,9 +496,10 @@ def create_shift_request(shift_type, from_date, to_date):
             status=doc.status
         )
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Shift Request Creation Failed")
         return send_response(500, "Error", "Something went wrong.")
+
 
 #####Employee Shift Requests List####
 
