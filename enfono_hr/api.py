@@ -719,7 +719,7 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
         if overlap:
             return send_response(409, "Conflict", "Leave application overlaps with an existing one.")
 
-        max_consec = frappe.db.get_value("Leave Type", leave_type, "max_consecutive_leaves")
+        max_consec = frappe.db.get_value("Leave Type", leave_type, "max_continuous_days_allowed")
         if max_consec:
             max_consec = int(max_consec)
 
