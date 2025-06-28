@@ -657,6 +657,7 @@ def get_available_leave_types():
 
 @frappe.whitelist()
 def create_leave_application(leave_type, from_date, to_date, half_day=None, half_day_date=None, reason=None):
+    
 
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
@@ -701,7 +702,7 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
             "docstatus": 1
         })
         if not allocation:
-            return send_response(400, "Leave Not Allocated", f"Leave type '{leave_type}' is not allocated or active for this period.")
+            return send_response(400, "Leave Not Allocated", f"Leave type '{leave_type}' is not allocated. Please contact HR.")
 
         leave_balance = get_leave_balance_on(employee, leave_type, from_date)
         requested_days = 0.5 if half_day else date_diff(to_date, from_date) + 1
@@ -721,6 +722,10 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
         if overlap:
             return send_response(409, "Conflict", "Leave application overlaps with an existing one.")
 
+        leave_approver = frappe.db.get_value("Employee", employee, "leave_approver")
+        if not leave_approver:
+            return send_response(400, "Missing Approver", "No leave approver is assigned to your profile. Please contact HR.")
+
         doc = frappe.get_doc({
             "doctype": "Leave Application",
             "employee": employee,
@@ -729,7 +734,7 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
             "to_date": to_date,
             "half_day": half_day,
             "half_day_date": half_day_date if half_day else None,
-            "leave_approver": frappe.db.get_value("Employee", employee, "leave_approver"),
+            "leave_approver": leave_approver,
             "status": "Open",
             "description": reason
         })
@@ -738,7 +743,7 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
 
         return send_response(200, "Success", "Leave application submitted.", application_id=doc.name)
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Leave Application Failed")
         return send_response(500, "Error", "Something went wrong.")
 
