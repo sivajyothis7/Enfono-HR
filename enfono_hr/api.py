@@ -10,8 +10,6 @@ from urllib.parse import quote_plus
 import re
 from frappe.utils import getdate, date_diff
 from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
-from datetime import timedelta
-
 
 
 
@@ -659,7 +657,8 @@ def get_available_leave_types():
 
 @frappe.whitelist()
 def create_leave_application(leave_type, from_date, to_date, half_day=None, half_day_date=None, reason=None):
-  
+    
+
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -684,11 +683,15 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
         if not frappe.db.exists("Leave Type", leave_type):
             return send_response(400, "Invalid", "Leave type does not exist.")
 
-        if from_date > to_date:
+        from_dt = getdate(from_date)
+        to_dt = getdate(to_date)
+
+        if from_dt > to_dt:
             return send_response(400, "Invalid Dates", "From date cannot be after to date.")
 
         if half_day and half_day_date:
-            if not (from_date <= half_day_date <= to_date):
+            half_dt = getdate(half_day_date)
+            if not (from_dt <= half_dt <= to_dt):
                 return send_response(400, "Invalid Half Day Date", "Half-day date must be within the leave date range.")
 
         allocation = frappe.db.exists("Leave Allocation", {
@@ -699,7 +702,7 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
             "docstatus": 1
         })
         if not allocation:
-            return send_response(400, "Leave Not Allocated", f"Leave type '{leave_type}' is not allocated ,Please contact HR.")
+            return send_response(400, "Leave Not Allocated", f"Leave type '{leave_type}' is not allocated. Please contact HR.")
 
         leave_balance = get_leave_balance_on(employee, leave_type, from_date)
         requested_days = 0.5 if half_day else date_diff(to_date, from_date) + 1
@@ -718,51 +721,6 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
         """, (employee, to_date, from_date))
         if overlap:
             return send_response(409, "Conflict", "Leave application overlaps with an existing one.")
-
-        max_consec = frappe.db.get_value("Leave Type", leave_type, "max_continuous_days_allowed")
-        if max_consec:
-            max_consec = int(max_consec)
-
-            existing_leaves = frappe.db.sql("""
-                SELECT from_date, to_date
-                FROM `tabLeave Application`
-                WHERE employee = %s
-                  AND leave_type = %s
-                  AND docstatus = 1
-                  AND status != 'Rejected'
-                  AND (
-                        (from_date BETWEEN DATE_SUB(%s, INTERVAL %s DAY) AND %s)
-                        OR
-                        (to_date BETWEEN %s AND DATE_ADD(%s, INTERVAL %s DAY))
-                      )
-            """, (
-                employee, leave_type,
-                from_date, max_consec, to_date,
-                from_date, to_date, max_consec
-            ), as_dict=True)
-
-            all_ranges = [(getdate(l.from_date), getdate(l.to_date)) for l in existing_leaves]
-            all_ranges.append((getdate(from_date), getdate(to_date)))
-            all_ranges.sort()
-
-            merged = []
-            for start, end in all_ranges:
-                if not merged:
-                    merged.append([start, end])
-                else:
-                    last_start, last_end = merged[-1]
-                    if start <= last_end + timedelta(days=1):
-                        merged[-1][1] = max(last_end, end)
-                    else:
-                        merged.append([start, end])
-
-            max_block = max((r[1] - r[0]).days + 1 for r in merged)
-            if max_block > max_consec:
-                return send_response(
-                    400,
-                    "Consecutive Leave Limit Exceeded",
-                    f"Cannot apply for leave. Consecutive '{leave_type}' days would become {max_block}, exceeding the allowed limit of {max_consec}."
-                )
 
         leave_approver = frappe.db.get_value("Employee", employee, "leave_approver")
         if not leave_approver:
@@ -785,7 +743,7 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
 
         return send_response(200, "Success", "Leave application submitted.", application_id=doc.name)
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Leave Application Failed")
         return send_response(500, "Error", "Something went wrong.")
 
