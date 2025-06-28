@@ -464,14 +464,7 @@ def create_shift_request(shift_type, from_date, to_date):
         if overlapping:
             return send_response(409, "Conflict", "This shift request overlaps with an existing request.")
 
-        allocation_exists = frappe.db.exists("Shift Assignment", {
-            "employee": employee,
-            "shift_type": shift_type,
-            "start_date": ["<=", to_date],
-            "end_date": [">=", from_date]
-        })
-        if not allocation_exists:
-            return send_response(400, "No Allocation", f"No shift allocation found for the selected period and shift type.Please Contact HR")
+        
 
         doc = frappe.get_doc({
             "doctype": "Shift Request",
