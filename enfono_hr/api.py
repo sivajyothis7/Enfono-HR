@@ -894,6 +894,7 @@ def approve_or_reject_leave_application(application_id, action):
 #####Attendance Request#####
 
 
+
 @frappe.whitelist()
 def create_attendance_request(from_date, to_date, reason, half_day=False, half_day_date=None):
     def send_response(status_code, status_message, message, **extra_fields):
@@ -937,6 +938,25 @@ def create_attendance_request(from_date, to_date, reason, half_day=False, half_d
         }):
             return send_response(409, "Conflict", "Overlapping attendance request already exists.")
 
+        leave_conflict = frappe.db.sql("""
+            SELECT name FROM `tabLeave Application`
+            WHERE employee = %s AND docstatus = 1
+              AND status != 'Rejected'
+              AND from_date <= %s AND to_date >= %s
+        """, (employee, to_date, from_date))
+
+        if leave_conflict:
+            return send_response(409, "Conflict", "Leave has already been applied for this date range.")
+
+        attendance_conflict = frappe.db.sql("""
+            SELECT name FROM `tabAttendance`
+            WHERE employee = %s
+              AND attendance_date BETWEEN %s AND %s
+        """, (employee, from_date, to_date))
+
+        if attendance_conflict:
+            return send_response(409, "Conflict", "Attendance already exists in this date range.")
+
         doc = frappe.get_doc({
             "doctype": "Attendance Request",
             "employee": employee,
@@ -951,7 +971,7 @@ def create_attendance_request(from_date, to_date, reason, half_day=False, half_d
 
         return send_response(200, "Success", "Attendance request created.", request_id=doc.name)
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Attendance Request Creation Failed")
         return send_response(500, "Error", "Something went wrong.")
 
