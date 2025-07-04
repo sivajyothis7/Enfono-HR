@@ -10,6 +10,7 @@ from urllib.parse import quote_plus
 import re
 from frappe.utils import getdate, date_diff, nowdate
 from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
+from frappe.model.workflow import apply_workflow
 
 
 
@@ -904,6 +905,7 @@ def get_team_leave_applications():
 
 @frappe.whitelist()
 def approve_or_reject_leave_application(application_id, action):
+
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.message_log = []
         frappe.local.response.pop("_server_messages", None)
@@ -921,10 +923,10 @@ def approve_or_reject_leave_application(application_id, action):
             return send_response(401, "Unauthorized", "Please login first.")
 
         valid_actions = [
-            "Approve and Forward",  
-            "Reject",               
-            "Approve",             
-            "Cancel"                
+            "Approve and Forward",
+            "Reject",
+            "Approve",
+            "Cancel"
         ]
 
         if action not in valid_actions:
@@ -961,7 +963,7 @@ def approve_or_reject_leave_application(application_id, action):
             if "System Manager" not in user_roles:
                 return send_response(403, "Forbidden", "Only System Managers can cancel leave.")
 
-        doc.submit_workflow_action(action)
+        apply_workflow(doc, action)
         frappe.db.commit()
 
         return send_response(200, "Success", f"Leave application updated with action '{action}'.", application_id=doc.name)
