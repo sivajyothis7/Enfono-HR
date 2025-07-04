@@ -10,7 +10,8 @@ from urllib.parse import quote_plus
 import re
 from frappe.utils import getdate, date_diff, nowdate
 from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
-from frappe.model.workflow import apply_workflow
+from frappe.model.workflow import apply_workflow, get_workflow_name
+from frappe.workflow.doctype.workflow.workflow import get_transitions, get_allowed_workflow_actions
 
 
 
@@ -905,6 +906,7 @@ def get_team_leave_applications():
 
 @frappe.whitelist()
 def approve_or_reject_leave_application(application_id, action):
+   
 
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.message_log = []
@@ -966,7 +968,17 @@ def approve_or_reject_leave_application(application_id, action):
         apply_workflow(doc, action)
         frappe.db.commit()
 
-        return send_response(200, "Success", f"Leave application updated with action '{action}'.", application_id=doc.name)
+        doc.reload()
+
+        next_actions = get_allowed_workflow_actions(doc)
+
+        return send_response(
+            200,
+            "Success",
+            f"Leave application updated with action '{action}'.",
+            application_id=doc.name,
+            next_possible_actions=next_actions
+        )
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Leave Approval Workflow Failed")
