@@ -882,7 +882,7 @@ def get_team_leave_applications():
         leave_apps_raw = frappe.get_all(
             "Leave Application",
             filters={"employee": ["in", employees]},
-            fields=["name", "employee", "leave_type", "from_date", "to_date", "status", "creation"],
+            fields=["name", "employee", "leave_type", "from_date", "to_date", "workflow_state", "creation"],
             order_by="creation desc"
         )
 
