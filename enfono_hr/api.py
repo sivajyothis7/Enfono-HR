@@ -1164,3 +1164,252 @@ def verify_and_reset_password(mobile_no, otp, new_password=None, confirm_passwor
     frappe.local.response["http_status_code"] = 200
     frappe.response["message"] = "Password reset successful"
     frappe.response["status_code"] = 200
+
+
+
+
+######CRM######
+
+###Lead Creation
+
+@frappe.whitelist()
+def create_lead(
+    first_name,
+    company_name,
+    status,
+    email=None,
+    phone=None,
+    mobile_no=None,
+    whatsapp_no=None,
+    website=None,
+    designation=None,
+    gender=None,
+    request_type=None,
+    city=None,
+    state=None,
+    country=None
+):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        if not first_name:
+            return send_response(400, "Invalid", "First Name is required.")
+        if not company_name:
+            return send_response(400, "Invalid", "Organization Name is required.")
+        if not status:
+            return send_response(400, "Invalid", "Status is required.")
+
+        valid_status = ["Lead", "Open", "Replied", "Interested", "Converted", "Do Not Contact"]
+        valid_gender = ["Male", "Female", "Other"]
+        valid_request_type = [
+            "Product Enquiry",
+            "Request for Information",
+            "Suggestions",
+            "Other"
+        ]
+
+        if status not in valid_status:
+            return send_response(400, "Invalid", "Invalid status.")
+        if gender and gender not in valid_gender:
+            return send_response(400, "Invalid", "Invalid gender.")
+        if request_type and request_type not in valid_request_type:
+            return send_response(400, "Invalid", "Invalid request type.")
+        if email and not frappe.utils.validate_email_address(email):
+            return send_response(400, "Invalid", "Invalid email address.")
+
+        duplicate_conditions = []
+        if email:
+            duplicate_conditions.append(("email_id", "=", email))
+        if mobile_no:
+            duplicate_conditions.append(("mobile_no", "=", mobile_no))
+
+        if duplicate_conditions:
+            existing_lead = frappe.db.exists("Lead", duplicate_conditions)
+            if existing_lead:
+                return send_response(
+                    409, "Duplicate", "A lead with this email or mobile number already exists.",
+                    existing_lead_id=existing_lead
+                )
+
+        doc = frappe.get_doc({
+            "doctype": "Lead",
+            "first_name": first_name,
+            "company_name": company_name,
+            "status": status,
+            "lead_owner": user,
+            "email_id": email,
+            "phone": phone,
+            "mobile_no": mobile_no,
+            "whatsapp_no": whatsapp_no,
+            "website": website,
+            "designation": designation,
+            "gender": gender,
+            "request_type": request_type,
+            "city": city,
+            "state": state,
+            "country": country
+        })
+
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        return send_response(200, "Success", "Lead created successfully.", lead_id=doc.name)
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Create Lead Failed")
+        return send_response(500, "Error", "Failed to create lead.")
+
+
+#####View My Leads#####
+
+@frappe.whitelist()
+def get_my_leads():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
+        frappe.local.response.update({
+            "http_status_code": status_code,
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Please log in first.")
+
+        leads = frappe.get_all(
+            "Lead",
+            filters={"owner": user},
+            fields=[
+                "name", "first_name", "company_name", "status", "request_type",
+                "email_id", "phone", "mobile_no", "whatsapp_no", "city", "state",
+                "country", "creation"
+            ],
+            order_by="creation desc"
+        )
+
+        return send_response(
+            200,
+            "Success",
+            "Your leads fetched.",
+            leads=leads
+        )
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Get My Leads Failed")
+        return send_response(500, "Error", "Could not retrieve leads.")
+
+
+#####Modify Leads####
+
+@frappe.whitelist()
+def update_lead(lead_id, **kwargs):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
+        frappe.local.response.update({
+            "http_status_code": status_code,
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        lead = frappe.get_doc("Lead", lead_id)
+        if lead.lead_owner != user:
+            return send_response(403, "Forbidden", "You do not have permission to modify this lead.")
+
+        editable_fields = [
+            "first_name", "company_name", "status", "email_id", "phone",
+            "mobile_no", "whatsapp_no", "website", "designation", "gender",
+            "request_type", "city", "state", "country"
+        ]
+
+        valid_status = ["Lead", "Open", "Replied", "Interested", "Converted", "Do Not Contact"]
+        valid_gender = ["Male", "Female", "Other"]
+        valid_request_type = ["Product Enquiry", "Request for Information", "Suggestions", "Other"]
+
+        for field, value in kwargs.items():
+            if field in editable_fields:
+                if field == "status" and value not in valid_status:
+                    return send_response(400, "Invalid", "Invalid status.")
+                if field == "gender" and value not in valid_gender:
+                    return send_response(400, "Invalid", "Invalid gender.")
+                if field == "request_type" and value not in valid_request_type:
+                    return send_response(400, "Invalid", "Invalid request type.")
+                if field == "email_id" and value and not frappe.utils.validate_email_address(value):
+                    return send_response(400, "Invalid", "Invalid email address.")
+                lead.set(field, value)
+
+        lead.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        return send_response(200, "Success", "Lead updated successfully.", lead_id=lead.name)
+
+    except frappe.DoesNotExistError:
+        return send_response(404, "Not Found", f"Lead with ID '{lead_id}' not found.")
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Update Lead Failed")
+        return send_response(500, "Error", "Failed to update lead.")
+
+
+####Delete My Lead####
+
+@frappe.whitelist()
+def delete_my_lead(lead_id):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
+        frappe.local.response.update({
+            "http_status_code": status_code,
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+
+        if user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        if "Sales User" not in frappe.get_roles(user):
+            return send_response(403, "Forbidden", "Only users with the 'Sales User' role can delete leads.")
+
+        lead = frappe.get_doc("Lead", lead_id)
+
+        if lead.lead_owner != user:
+            return send_response(403, "Forbidden", "You are not allowed to delete this lead.")
+
+        lead.delete()
+        frappe.db.commit()
+
+        return send_response(200, "Success", f"Lead {lead_id} deleted successfully.")
+
+    except frappe.DoesNotExistError:
+        return send_response(404, "Not Found", f"Lead with ID '{lead_id}' does not exist.")
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Delete Lead Failed")
+        return send_response(500, "Error", "Could not delete lead.")
