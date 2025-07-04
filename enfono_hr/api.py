@@ -818,7 +818,7 @@ def get_my_leave_applications():
         leave_apps_raw = frappe.get_all(
             "Leave Application",
             filters={"employee": employee},
-            fields=["name", "leave_type", "from_date", "to_date", "status", "creation", "leave_approver"],
+            fields=["name", "leave_type", "from_date", "to_date", "workflow_state", "creation", "leave_approver"],
             order_by="creation desc"
         )
 
@@ -832,7 +832,7 @@ def get_my_leave_applications():
                 "leave_type": app.leave_type,
                 "from_date": app.from_date,
                 "to_date": app.to_date,
-                "status": app.status,
+                "workflow_state": app.workflow_state,
                 "creation": app.creation,
                 "leave_approver_name": get_user_full_name(app.leave_approver)
             })
@@ -842,7 +842,6 @@ def get_my_leave_applications():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Fetch Leave Applications Failed")
         return send_response(500, "Error", "Something went wrong.")
-
 
 
 
@@ -882,7 +881,7 @@ def get_team_leave_applications():
                 filters={"employee": ["in", employees]},
                 fields=[
                     "name", "employee", "leave_type", "from_date",
-                    "to_date", "status", "workflow_state", "creation"
+                    "to_date", "workflow_state", "creation"
                 ],
                 order_by="creation desc"
             )
@@ -894,7 +893,7 @@ def get_team_leave_applications():
                 filters={"workflow_state": "Approval Pending By HR"},
                 fields=[
                     "name", "employee", "leave_type", "from_date",
-                    "to_date", "status", "workflow_state", "creation"
+                    "to_date", "workflow_state", "creation"
                 ],
                 order_by="creation desc"
             )
