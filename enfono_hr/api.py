@@ -28,7 +28,7 @@ def custom_login(username=None, password=None):
                 "status_message": status_message,
                 **extra_fields
             })
-            return None 
+            return None
 
         if not username or not password:
             return send_response(
@@ -59,13 +59,22 @@ def custom_login(username=None, password=None):
         user_doc = frappe.get_doc("User", frappe.session.user)
         api_secret = generate_keys(user_doc)
 
-        employee_id = frappe.db.get_value("Employee", {"user_id": user_doc.name})
-        if not employee_id:
+        employee_doc = frappe.get_doc("Employee", {"user_id": user_doc.name})
+        if not employee_doc:
             return send_response(
                 message="User is not linked to any Employee record.",
                 status_code=401,
                 status_message="Invalid username/password"
             )
+
+        def get_user_full_name(user_id):
+            if not user_id:
+                return None
+            return frappe.db.get_value("User", user_id, "full_name")
+
+        expense_approver = employee_doc.get("expense_approver")
+        shift_request_approver = employee_doc.get("shift_request_approver")
+        leave_approver = employee_doc.get("leave_approver")
 
         return send_response(
             message="Authentication successful.",
@@ -74,9 +83,12 @@ def custom_login(username=None, password=None):
             sid=frappe.session.sid,
             email=user_doc.email,
             mobile_number=user_doc.mobile_no,
-            employee_id=employee_id,
+            employee_id=employee_doc.name,
             api_key=user_doc.api_key,
-            api_secret=api_secret
+            api_secret=api_secret,
+            expense_approver_name=get_user_full_name(expense_approver),
+            shift_request_approver_name=get_user_full_name(shift_request_approver),
+            leave_approver_name=get_user_full_name(leave_approver)
         )
 
     except Exception as e:
@@ -88,7 +100,7 @@ def custom_login(username=None, password=None):
             "status_message": "Server Error"
         })
         return None
-        
+
 
 def generate_keys(user):
     """
@@ -517,22 +529,34 @@ def get_my_shift_requests():
         if user == "Guest":
             return send_response(401, "Unauthorized", "Please login first.")
 
-        employee = frappe.db.get_value("Employee", {"user_id": user})
-        if not employee:
+        employee_id = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee_id:
             return send_response(404, "Not Found", "No employee linked to this user.")
 
-        shift_requests = frappe.get_all(
+        employee_doc = frappe.get_doc("Employee", employee_id)
+        shift_request_approver = employee_doc.get("shift_request_approver")
+
+        def get_user_full_name(user_id):
+            return frappe.db.get_value("User", user_id, "full_name") if user_id else None
+
+        shift_request_approver_name = get_user_full_name(shift_request_approver)
+
+        shift_requests_raw = frappe.get_all(
             "Shift Request",
-            filters={"employee": employee},
+            filters={"employee": employee_id},
             fields=["name", "shift_type", "from_date", "to_date", "status", "creation"],
             order_by="creation desc"
         )
+
+        shift_requests = []
+        for req in shift_requests_raw:
+            req["shift_request_approver_name"] = shift_request_approver_name
+            shift_requests.append(req)
 
         return send_response(
             200,
             "Success",
             "Shift requests fetched.",
-            employee_id=employee,
             shift_requests=shift_requests
         )
 
@@ -569,23 +593,29 @@ def get_team_shift_requests():
         if employee:
             filters["employee"] = ["!=", employee]
 
-        requests = frappe.get_all(
+        raw_requests = frappe.get_all(
             "Shift Request",
             filters=filters,
             fields=["name", "employee", "shift_type", "from_date", "to_date", "status", "creation"],
             order_by="creation desc"
         )
 
+        shift_requests = []
+        for req in raw_requests:
+            req["employee_name"] = frappe.db.get_value("Employee", req["employee"], "employee_name")
+            shift_requests.append(req)
+
         return send_response(
             200,
             "Success",
             "Pending shift requests fetched.",
-            shift_requests=requests
+            shift_requests=shift_requests
         )
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Get Team Shift Requests Failed")
         return send_response(500, "Error", "Something went wrong.")
+
 
 #####Approve_or_reject_shift_request#####
 
@@ -761,7 +791,6 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
 
 ######Employee Leave Requests List#####
 
-
 @frappe.whitelist()
 def get_my_leave_applications():
     def send_response(status_code, status_message, message, **extra_fields):
@@ -784,12 +813,27 @@ def get_my_leave_applications():
         if not employee:
             return send_response(404, "Not Found", "No employee linked.")
 
-        leave_apps = frappe.get_all(
+        leave_apps_raw = frappe.get_all(
             "Leave Application",
             filters={"employee": employee},
-            fields=["name", "leave_type", "from_date", "to_date", "status", "creation"],
+            fields=["name", "leave_type", "from_date", "to_date", "status", "creation", "leave_approver"],
             order_by="creation desc"
         )
+
+        def get_user_full_name(user_id):
+            return frappe.db.get_value("User", user_id, "full_name") if user_id else None
+
+        leave_apps = []
+        for app in leave_apps_raw:
+            leave_apps.append({
+                "name": app.name,
+                "leave_type": app.leave_type,
+                "from_date": app.from_date,
+                "to_date": app.to_date,
+                "status": app.status,
+                "creation": app.creation,
+                "leave_approver_name": get_user_full_name(app.leave_approver)
+            })
 
         return send_response(200, "Success", "Leave applications fetched.", leave_applications=leave_apps)
 
@@ -822,7 +866,6 @@ def get_team_leave_applications():
             return send_response(401, "Unauthorized", "Login required.")
 
         current_employee = frappe.db.get_value("Employee", {"user_id": user})
-
         employees = frappe.get_all("Employee", filters={"leave_approver": user}, pluck="name")
 
         if not employees:
@@ -834,12 +877,18 @@ def get_team_leave_applications():
         if not employees:
             return send_response(200, "Success", "No team leave requests found.", team_requests=[])
 
-        leave_apps = frappe.get_all(
+        leave_apps_raw = frappe.get_all(
             "Leave Application",
             filters={"employee": ["in", employees]},
             fields=["name", "employee", "leave_type", "from_date", "to_date", "status", "creation"],
             order_by="creation desc"
         )
+
+        leave_apps = []
+        for app in leave_apps_raw:
+            employee_name = frappe.db.get_value("Employee", app["employee"], "employee_name")
+            app["employee_name"] = employee_name
+            leave_apps.append(app)
 
         return send_response(200, "Success", "Team leave applications fetched.", leave_applications=leave_apps)
 
