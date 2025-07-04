@@ -867,37 +867,47 @@ def get_team_leave_applications():
         if user == "Guest":
             return send_response(401, "Unauthorized", "Login required.")
 
-        current_employee = frappe.db.get_value("Employee", {"user_id": user})
-        employees = frappe.get_all("Employee", filters={"leave_approver": user}, pluck="name")
+        leave_apps = []
 
-        if not employees:
-            return send_response(200, "Success", "No team members found.", team_requests=[])
+        current_employee = frappe.db.get_value("Employee", {"user_id": user})
+
+        employees = frappe.get_all("Employee", filters={"leave_approver": user}, pluck="name")
 
         if current_employee and current_employee in employees:
             employees.remove(current_employee)
 
-        if not employees:
-            return send_response(200, "Success", "No team leave requests found.", team_requests=[])
+        if employees:
+            approver_apps = frappe.get_all(
+                "Leave Application",
+                filters={"employee": ["in", employees]},
+                fields=[
+                    "name", "employee", "leave_type", "from_date",
+                    "to_date", "status", "workflow_state", "creation"
+                ],
+                order_by="creation desc"
+            )
+            leave_apps.extend(approver_apps)
 
-        leave_apps_raw = frappe.get_all(
-            "Leave Application",
-            filters={"employee": ["in", employees]},
-            fields=["name", "employee", "leave_type", "from_date", "to_date", "workflow_state", "creation"],
-            order_by="creation desc"
-        )
+        if "HR Manager" in frappe.get_roles(user):
+            hr_apps = frappe.get_all(
+                "Leave Application",
+                filters={"workflow_state": "Approval Pending By HR"},
+                fields=[
+                    "name", "employee", "leave_type", "from_date",
+                    "to_date", "status", "workflow_state", "creation"
+                ],
+                order_by="creation desc"
+            )
+            leave_apps.extend(hr_apps)
 
-        leave_apps = []
-        for app in leave_apps_raw:
-            employee_name = frappe.db.get_value("Employee", app["employee"], "employee_name")
-            app["employee_name"] = employee_name
-            leave_apps.append(app)
+        for app in leave_apps:
+            app["employee_name"] = frappe.db.get_value("Employee", app["employee"], "employee_name")
 
         return send_response(200, "Success", "Team leave applications fetched.", leave_applications=leave_apps)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Team Leave Applications Failed")
         return send_response(500, "Error", "Something went wrong.")
-
 
 
 ######Approve Leave Requests List#####
