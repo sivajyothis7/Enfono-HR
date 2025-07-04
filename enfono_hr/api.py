@@ -776,7 +776,7 @@ def create_leave_application(leave_type, from_date, to_date, half_day=None, half
             "half_day": half_day,
             "half_day_date": half_day_date if half_day else None,
             "leave_approver": leave_approver,
-            "status": "Open",
+            "workflow_state": "Open",
             "description": reason
         })
         doc.insert()
@@ -905,6 +905,8 @@ def get_team_leave_applications():
 @frappe.whitelist()
 def approve_or_reject_leave_application(application_id, action):
     def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
             "status_code": status_code,
@@ -916,29 +918,56 @@ def approve_or_reject_leave_application(application_id, action):
     try:
         user = frappe.session.user
         if user == "Guest":
-            return send_response(401, "Unauthorized", "Login required.")
+            return send_response(401, "Unauthorized", "Please login first.")
 
-        if action not in ["Approved", "Rejected"]:
-            return send_response(400, "Invalid Action", "Action must be 'Approved' or 'Rejected'.")
+        valid_actions = [
+            "Approve and Forward",  
+            "Reject",               
+            "Approve",             
+            "Cancel"                
+        ]
+
+        if action not in valid_actions:
+            return send_response(400, "Invalid Action", f"Action must be one of: {', '.join(valid_actions)}")
 
         doc = frappe.get_doc("Leave Application", application_id)
 
         employee_user = frappe.db.get_value("Employee", doc.employee, "user_id")
         if employee_user == user:
-            return send_response(403, "Forbidden", "You can't approve your own request.")
+            return send_response(403, "Forbidden", "You cannot approve or reject your own leave.")
 
-        if doc.leave_approver != user:
-            return send_response(403, "Forbidden", "You are not the assigned approver.")
+        user_roles = frappe.get_roles(user)
+        current_state = doc.workflow_state
 
-        doc.status = action
-        doc.save()
-        if doc.docstatus == 0:
-            doc.submit()
+        if action == "Approve and Forward":
+            if "Leave Approver" not in user_roles:
+                return send_response(403, "Forbidden", "Only Leave Approvers can approve and forward.")
+            if current_state != "Open":
+                return send_response(400, "Invalid State", "This action is allowed only in 'Open' state.")
 
-        return send_response(200, "Success", f"Leave application {action.lower()} successfully.", application_id=doc.name)
+        elif action == "Approve":
+            if "HR Manager" not in user_roles:
+                return send_response(403, "Forbidden", "Only HR Managers can approve.")
+            if current_state != "Approval Pending By HR":
+                return send_response(400, "Invalid State", "This action is allowed only in 'Approval Pending By HR' state.")
 
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Leave Approval Failed")
+        elif action == "Reject":
+            if current_state == "Open" and "Leave Approver" not in user_roles:
+                return send_response(403, "Forbidden", "Only Leave Approvers can reject at this stage.")
+            elif current_state == "Approval Pending By HR" and "HR Manager" not in user_roles:
+                return send_response(403, "Forbidden", "Only HR Managers can reject at this stage.")
+
+        elif action == "Cancel":
+            if "System Manager" not in user_roles:
+                return send_response(403, "Forbidden", "Only System Managers can cancel leave.")
+
+        doc.submit_workflow_action(action)
+        frappe.db.commit()
+
+        return send_response(200, "Success", f"Leave application updated with action '{action}'.", application_id=doc.name)
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Leave Approval Workflow Failed")
         return send_response(500, "Error", "Something went wrong.")
 
 
