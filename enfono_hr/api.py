@@ -78,6 +78,15 @@ def custom_login(username=None, password=None):
         shift_request_approver = employee_doc.get("shift_request_approver")
         leave_approver = employee_doc.get("leave_approver")
 
+        user_roles = frappe.get_roles(user_doc.name)
+
+        if "HR Manager" in user_roles:
+            user_type = "hr_manager"
+        elif "Leave Approver" in user_roles:
+            user_type = "leave_approver"
+        else:
+            user_type = "employee"
+
         return send_response(
             message="Authentication successful.",
             status_code=200,
@@ -90,7 +99,9 @@ def custom_login(username=None, password=None):
             api_secret=api_secret,
             expense_approver_name=get_user_full_name(expense_approver),
             shift_request_approver_name=get_user_full_name(shift_request_approver),
-            leave_approver_name=get_user_full_name(leave_approver)
+            leave_approver_name=get_user_full_name(leave_approver),
+            roles=user_roles,            
+            user_type=user_type          
         )
 
     except Exception as e:
