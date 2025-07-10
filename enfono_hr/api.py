@@ -100,8 +100,7 @@ def custom_login(username=None, password=None):
             expense_approver_name=get_user_full_name(expense_approver),
             shift_request_approver_name=get_user_full_name(shift_request_approver),
             leave_approver_name=get_user_full_name(leave_approver),
-            roles=user_roles,            
-            user_type=user_type          
+            user_type=user_type
         )
 
     except Exception as e:
@@ -113,6 +112,7 @@ def custom_login(username=None, password=None):
             "status_message": "Server Error"
         })
         return None
+
 
 
 def generate_keys(user):
@@ -633,8 +633,12 @@ def get_team_shift_requests():
 #####Approve_or_reject_shift_request#####
 
 @frappe.whitelist()
-def approve_or_reject_shift_request(name, action):
+def approve_or_reject_shift_request(shift_request_id, action):
+    from frappe.model.workflow import apply_workflow
+
     def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
             "status_code": status_code,
@@ -642,37 +646,61 @@ def approve_or_reject_shift_request(name, action):
             "message": message,
             **extra_fields
         })
-        return None
 
     try:
         user = frappe.session.user
         if user == "Guest":
             return send_response(401, "Unauthorized", "Please login first.")
 
-        if action not in ["Approved", "Rejected"]:
-            return send_response(400, "Invalid Action", "Only 'Approved' or 'Rejected' actions are allowed.")
+        valid_actions = [
+            "Approve and Forward",
+            "Reject",
+            "Approve",
+            "Cancel"
+        ]
 
-        doc = frappe.get_doc("Shift Request", name)
+        if action not in valid_actions:
+            return send_response(400, "Invalid Action", f"Action must be one of: {', '.join(valid_actions)}")
+
+        doc = frappe.get_doc("Shift Request", shift_request_id)
 
         employee_user = frappe.db.get_value("Employee", doc.employee, "user_id")
-        if user == employee_user:
-            return send_response(403, "Forbidden", "You cannot approve your own request.")
+        if employee_user == user:
+            return send_response(403, "Forbidden", "You cannot approve or reject your own shift request.")
 
-        if doc.approver != user:
-            return send_response(403, "Forbidden", "You are not authorized to approve this request.")
+        user_roles = frappe.get_roles(user)
+        current_state = doc.workflow_state
 
-        doc.status = action
-        doc.save()
+        if action == "Approve and Forward":
+            if "Leave Approver" not in user_roles:
+                return send_response(403, "Forbidden", "Only Leave Approvers can approve and forward.")
+            if current_state != "Open":
+                return send_response(400, "Invalid State", "This action is allowed only in 'Open' state.")
 
-        if doc.docstatus == 0:
-            doc.submit()
+        elif action == "Approve":
+            if "HR Manager" not in user_roles:
+                return send_response(403, "Forbidden", "Only HR Managers can approve.")
+            if current_state != "Approval Pending By HR":
+                return send_response(400, "Invalid State", "This action is allowed only in 'Approval Pending By HR' state.")
 
-        return send_response(200, "Success", f"Shift request {action.lower()} successfully.", request_id=doc.name)
+        elif action == "Reject":
+            if current_state == "Open" and "Leave Approver" not in user_roles:
+                return send_response(403, "Forbidden", "Only Leave Approvers can reject at this stage.")
+            elif current_state == "Approval Pending By HR" and "HR Manager" not in user_roles:
+                return send_response(403, "Forbidden", "Only HR Managers can reject at this stage.")
 
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Shift Request Approval Failed")
+        elif action == "Cancel":
+            if "System Manager" not in user_roles:
+                return send_response(403, "Forbidden", "Only System Managers can cancel shift requests.")
+
+        apply_workflow(doc, action)
+        frappe.db.commit()
+
+        return send_response(200, "Success", f"Shift request updated with action '{action}'.", shift_request_id=doc.name)
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Shift Request Workflow Failed")
         return send_response(500, "Error", "Something went wrong.")
-
 
 #####LEAVE APPLICATION API####
 
