@@ -595,38 +595,48 @@ def get_team_shift_requests():
     try:
         user = frappe.session.user
         if user == "Guest":
-            return send_response(401, "Unauthorized", "Please login first.")
-
-        employee = frappe.db.get_value("Employee", {"user_id": user})
-
-        filters = {
-            "approver": user,
-        }
-
-        if employee:
-            filters["employee"] = ["!=", employee]
-
-        raw_requests = frappe.get_all(
-            "Shift Request",
-            filters=filters,
-            fields=["name", "employee", "shift_type", "from_date", "to_date", "status", "creation"],
-            order_by="creation desc"
-        )
+            return send_response(401, "Unauthorized", "Login required.")
 
         shift_requests = []
-        for req in raw_requests:
-            req["employee_name"] = frappe.db.get_value("Employee", req["employee"], "employee_name")
-            shift_requests.append(req)
 
-        return send_response(
-            200,
-            "Success",
-            "Pending shift requests fetched.",
-            shift_requests=shift_requests
-        )
+        current_employee = frappe.db.get_value("Employee", {"user_id": user})
+
+        employees = frappe.get_all("Employee", filters={"shift_request_approver": user}, pluck="name")
+
+        if current_employee and current_employee in employees:
+            employees.remove(current_employee)
+
+        if employees:
+            approver_reqs = frappe.get_all(
+                "Shift Request",
+                filters={"employee": ["in", employees]},
+                fields=[
+                    "name", "employee", "shift_type", "from_date",
+                    "to_date", "workflow_state", "creation"
+                ],
+                order_by="creation desc"
+            )
+            shift_requests.extend(approver_reqs)
+
+        if "HR Manager" in frappe.get_roles(user):
+            hr_reqs = frappe.get_all(
+                "Shift Request",
+                filters={"workflow_state": "Approval Pending By HR"},
+                fields=[
+                    "name", "employee", "shift_type", "from_date",
+                    "to_date", "workflow_state", "creation"
+                ],
+                order_by="creation desc"
+            )
+            shift_requests.extend(hr_reqs)
+
+        for req in shift_requests:
+            req["employee_name"] = frappe.db.get_value("Employee", req["employee"], "employee_name")
+
+        return send_response(200, "Success", "Team shift requests fetched.", shift_requests=shift_requests)
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "Get Team Shift Requests Failed")
+        frappe.log_error(frappe.get_traceback(), "Team Shift Requests Failed")
         return send_response(500, "Error", "Something went wrong.")
 
 
