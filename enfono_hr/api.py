@@ -1553,3 +1553,270 @@ def delete_my_lead(lead_id):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Delete Lead Failed")
         return send_response(500, "Error", "Could not delete lead.")
+
+
+#######Asssign Lead#######
+
+@frappe.whitelist()
+def get_assignable_users():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        users = frappe.get_all(
+            "User",
+            filters={
+                "enabled": 1,
+                "user_type": "System User",
+                "name": ["!=", "Administrator"]
+            },
+            fields=["full_name"]
+        )
+
+        full_names = [user.full_name for user in users if user.full_name]
+
+        return send_response(
+            200,
+            "Success",
+            "User full names fetched successfully.",
+            users=full_names
+        )
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Fetch User Full Names Failed")
+        return send_response(500, "Error", "Unable to fetch user full names.")
+
+
+
+@frappe.whitelist()
+def assign_lead_to_user(lead_name, full_name):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        if frappe.session.user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        if not frappe.db.exists("Lead", lead_name):
+            return send_response(404, "Not Found", f"Lead '{lead_name}' not found.")
+
+        user_id = frappe.db.get_value("User", {"full_name": full_name}, "name")
+        if not user_id:
+            return send_response(404, "Not Found", f"No user found with name '{full_name}'.")
+
+        if frappe.db.exists("ToDo", {
+            "allocated_to": user_id,
+            "reference_type": "Lead",
+            "reference_name": lead_name
+        }):
+            return send_response(409, "Conflict", f"Lead '{lead_name}' is already assigned to '{full_name}'.")
+
+        frappe.get_doc({
+            "doctype": "ToDo",
+            "allocated_to": user_id,
+            "reference_type": "Lead",
+            "reference_name": lead_name,
+            "description": f"Lead assigned to {full_name}"
+        }).insert(ignore_permissions=True)
+
+        frappe.db.commit()
+
+        return send_response(200, "Success", f"Lead '{lead_name}' assigned to '{full_name}'.")
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Lead Assignment Failed")
+        return send_response(500, "Error", "Something went wrong while assigning the lead.")
+
+
+
+########Create Customer from Lead#####
+
+@frappe.whitelist()
+def create_customer_from_lead(lead_name):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        if frappe.session.user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        if not frappe.db.exists("Lead", lead_name):
+            return send_response(404, "Not Found", "Lead does not exist.")
+
+        lead = frappe.get_doc("Lead", lead_name)
+
+        existing_customer = frappe.db.exists("Customer", {"lead_name": lead.name})
+        if existing_customer:
+            return send_response(409, "Conflict", "Customer already created for this lead.", customer_id=existing_customer)
+
+        customer = frappe.new_doc("Customer")
+        customer.customer_name = lead.lead_name
+        customer.customer_type = "Individual" if not lead.company_name else "Company"
+        customer.lead_name = lead.name
+        customer.territory = lead.country 
+        customer.insert()
+        frappe.db.commit()
+
+        return send_response(200, "Success", "Customer created successfully.", customer_id=customer.name)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Create Customer from Lead Failed")
+        return send_response(500, "Error", "Something went wrong while creating the customer.")
+
+
+
+
+######Quotation from Lead
+
+@frappe.whitelist()
+def create_quotation_from_lead(lead_name, description, rate):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        if frappe.session.user == "Guest":
+            return send_response(401, "Unauthorized", "Please login first.")
+
+        if not lead_name or not description or rate is None:
+            return send_response(400, "Bad Request", "Lead, description, and rate are required.")
+
+        if not frappe.db.exists("Lead", lead_name):
+            return send_response(404, "Not Found", "Lead does not exist.")
+
+        lead = frappe.get_doc("Lead", lead_name)
+
+        customer_name = frappe.db.get_value("Customer", {"lead_name": lead.name}, "name")
+
+        quotation = frappe.new_doc("Quotation")
+        quotation.quotation_to = "Lead" if not customer_name else "Customer"
+        quotation.party_name = lead.name if not customer_name else customer_name
+        quotation.lead = lead.name
+        quotation.transaction_date = nowdate()
+        quotation.status = "Draft"
+
+        quotation.append("items", {
+            "item_code": "Services",
+            "item_name": "Services",
+            "description": description,
+            "qty": 1,
+            "rate": float(rate)
+        })
+
+        quotation.insert()
+        frappe.db.commit()
+
+        return send_response(
+            200,
+            "Success",
+            "Quotation created successfully.",
+            quotation_id=quotation.name
+        )
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Create Quotation from Lead Failed")
+        return send_response(500, "Error", "Something went wrong while creating the quotation.")
+
+
+
+########Geolocation
+
+import frappe
+import requests
+
+@frappe.whitelist()
+def create_lead_geolocation(lead_name, latitude=None, longitude=None):
+	def send_response(status_code, status_message, message, **extra_fields):
+		frappe.local.response["http_status_code"] = status_code
+		frappe.local.response.update({
+			"status_code": status_code,
+			"status_message": status_message,
+			"message": message,
+			**extra_fields
+		})
+		return None
+
+	def reverse_geocode(lat, lon):
+		try:
+			response = requests.get(
+				"https://nominatim.openstreetmap.org/reverse",
+				params={"format": "json", "lat": lat, "lon": lon},
+				headers={"User-Agent": "frappe-app"}
+			)
+			if response.status_code == 200:
+				return response.json().get("display_name")
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Reverse Geocoding Failed")
+		return ""
+
+	try:
+		if frappe.session.user == "Guest":
+			return send_response(401, "Unauthorized", "Please login first.")
+
+		if not frappe.db.exists("Lead", lead_name):
+			return send_response(404, "Not Found", "Lead not found.")
+
+		if not latitude or not longitude:
+			return send_response(400, "Bad Request", "Latitude and Longitude are required.")
+
+		lead = frappe.get_doc("Lead", lead_name)
+		lead.latitude = latitude
+		lead.longitude = longitude
+		lead.location = reverse_geocode(latitude, longitude)
+
+		# Set Geolocation in GeoJSON format
+		lead.geolocation = frappe.json.dumps({
+			"type": "FeatureCollection",
+			"features": [
+				{
+					"type": "Feature",
+					"properties": {},
+					"geometry": {
+						"type": "Point",
+						"coordinates": [float(longitude), float(latitude)]
+					}
+				}
+			]
+		})
+
+		lead.save(ignore_permissions=True)
+		frappe.db.commit()
+
+		return send_response(
+			200, "Success", "Geolocation updated successfully.",
+			lead=lead.name,
+			latitude=latitude,
+			longitude=longitude,
+			location=lead.location
+		)
+
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Update Lead Geolocation Error")
+		return send_response(500, "Error", "Something went wrong while updating geolocation.")
