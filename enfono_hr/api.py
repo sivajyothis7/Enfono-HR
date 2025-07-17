@@ -11,6 +11,7 @@ import re
 from frappe.utils import getdate, date_diff, nowdate
 from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
 from frappe.model.workflow import apply_workflow
+from frappe.utils.file_manager import save_file
 
 
 
@@ -1417,7 +1418,7 @@ def create_lead(
 
 @frappe.whitelist()
 def get_my_leads():
-    def send_response(status_code, status_message, message, **extra_fields):
+    def send_response(message, status_code, status_message, **extra_fields):
         frappe.local.message_log = []
         frappe.local.response.pop("_server_messages", None)
         frappe.local.response.update({
@@ -1429,31 +1430,49 @@ def get_my_leads():
         })
 
     try:
+        if not frappe.session.user or frappe.session.user == "Guest":
+            return send_response("Please log in first.", 401, "Unauthorized")
+
         user = frappe.session.user
-        if user == "Guest":
-            return send_response(401, "Unauthorized", "Please log in first.")
 
-        leads = frappe.get_all(
-            "Lead",
+        owned_leads = frappe.get_all("Lead",
             filters={"owner": user},
-            fields=[
-                "name", "first_name", "company_name", "status", "request_type",
-                "email_id", "phone", "mobile_no", "whatsapp_no", "city", "state",
-                "country", "creation"
-            ],
-            order_by="creation desc"
+            fields=["name", "first_name", "last_name","company_name", "status", "request_type", "email_id",
+                    "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation"]
         )
+        for lead in owned_leads:
+            lead["source"] = "Owner"
 
-        return send_response(
-            200,
-            "Success",
-            "Your leads fetched.",
-            leads=leads
+        assigned_lead_names = frappe.get_all("ToDo",
+            filters={"reference_type": "Lead", "owner": user},
+            fields=["reference_name"]
         )
+        assigned_lead_names = [d.reference_name for d in assigned_lead_names]
+
+        assigned_leads = []
+        if assigned_lead_names:
+            assigned_leads = frappe.get_all("Lead",
+                filters=[
+                    ["name", "in", assigned_lead_names],
+                    ["owner", "!=", user]  
+                ],
+                fields=["name", "first_name", "last_name","company_name", "status", "request_type", "email_id",
+                        "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation"]
+            )
+            for lead in assigned_leads:
+                lead["source"] = "Assigned"
+
+        all_leads = owned_leads + assigned_leads
+
+        if not all_leads:
+            return send_response("No leads found.", 200, "Success", leads=[])
+
+        return send_response("Your leads fetched.", 200, "Success", leads=all_leads)
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "Get My Leads Failed")
-        return send_response(500, "Error", "Could not retrieve leads.")
+        frappe.log_error(frappe.get_traceback(), "get_my_leads")
+        return send_response("Could not retrieve leads.", 500, "Error")
+
 
 
 #####Modify Leads####
@@ -1748,8 +1767,6 @@ def create_quotation_from_lead(lead_name, description, rate):
 
 ########Geolocation
 
-import frappe
-import requests
 
 @frappe.whitelist()
 def create_lead_geolocation(lead_name, latitude=None, longitude=None):
@@ -1791,7 +1808,6 @@ def create_lead_geolocation(lead_name, latitude=None, longitude=None):
 		lead.longitude = longitude
 		lead.location = reverse_geocode(latitude, longitude)
 
-		# Set Geolocation in GeoJSON format
 		lead.geolocation = frappe.json.dumps({
 			"type": "FeatureCollection",
 			"features": [
@@ -1820,3 +1836,58 @@ def create_lead_geolocation(lead_name, latitude=None, longitude=None):
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), "Update Lead Geolocation Error")
 		return send_response(500, "Error", "Something went wrong while updating geolocation.")
+
+
+
+#####Attachments####
+
+@frappe.whitelist()
+def upload_lead_attachment():
+    try:
+        lead_name = frappe.form_dict.get("lead_name")
+        uploaded_file = frappe.request.files.get("file")
+
+        if not lead_name:
+            frappe.local.response["http_status_code"] = 400
+            return {
+                "status_code": 400,
+                "status_message": "Bad Request",
+                "message": "Missing lead_name"
+            }
+
+        if not uploaded_file:
+            frappe.local.response["http_status_code"] = 400
+            return {
+                "status_code": 400,
+                "status_message": "Bad Request",
+                "message": "No file provided"
+            }
+
+        saved_file = save_file(
+            uploaded_file.filename,
+            uploaded_file.stream.read(),
+            "Lead",
+            lead_name,
+            folder="Home/Attachments",
+            decode=False
+        )
+
+        frappe.db.commit()
+
+        frappe.local.response["http_status_code"] = 200
+        return {
+            "status_code": 200,
+            "status_message": "Success",
+            "message": "File uploaded successfully",
+            "file_url": saved_file.file_url,
+            "file_name": saved_file.file_name
+        }
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Lead File Upload Error")
+        frappe.local.response["http_status_code"] = 500
+        return {
+            "status_code": 500,
+            "status_message": "Error",
+            "message": "Something went wrong during upload"
+        }
