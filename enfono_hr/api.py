@@ -12,7 +12,8 @@ from frappe.utils import getdate, date_diff, nowdate
 from hrms.hr.doctype.leave_application.leave_application import get_leave_balance_on
 from frappe.model.workflow import apply_workflow
 from frappe.utils.file_manager import save_file
-
+import base64
+from frappe.utils.file_manager import save_file
 
 
 
@@ -1741,7 +1742,8 @@ def create_quotation_from_lead(lead_name, description, rate):
         quotation.transaction_date = nowdate()
         quotation.status = "Draft"
 
-        quotation.append("items", {
+        quotation.append("items", {        
+
             "item_code": "Services",
             "item_name": "Services",
             "description": description,
@@ -1763,6 +1765,58 @@ def create_quotation_from_lead(lead_name, description, rate):
         frappe.log_error(frappe.get_traceback(), "Create Quotation from Lead Failed")
         return send_response(500, "Error", "Something went wrong while creating the quotation.")
 
+
+
+##### Quotations created by the logged-in user
+
+@frappe.whitelist()
+def get_quotations_by_user():
+    try:
+        user = frappe.session.user
+        if user == "Guest":
+            frappe.throw("You must be logged in to access this resource.")
+
+        assigned_quotations = frappe.get_all(
+            "ToDo",
+            filters={
+                "reference_type": "Quotation",
+                "owner": user
+            },
+            pluck="reference_name"
+        )
+
+        owned_quotations = frappe.get_all(
+            "Quotation",
+            filters={"owner": user},
+            pluck="name"
+        )
+
+        all_quotation_names = list(set(assigned_quotations + owned_quotations))
+
+        if not all_quotation_names:
+            return {
+                "status": "success",
+                "data": []
+            }
+
+        quotations = frappe.get_all(
+            "Quotation",
+            filters={"name": ["in", all_quotation_names]},
+            fields=["name", "customer_name", "quotation_to", "transaction_date", "status", "grand_total"],
+            order_by="modified desc"
+        )
+
+        return {
+            "status": "success",
+            "data": quotations
+        }
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Get Quotations by User Failed")
+        return {
+            "status": "error",
+            "message": "An error occurred while fetching quotations."
+        }
 
 
 ########Geolocation
@@ -1841,11 +1895,16 @@ def create_lead_geolocation(lead_name, latitude=None, longitude=None):
 
 #####Attachments####
 
-@frappe.whitelist()
+
+@frappe.whitelist(allow_guest=True)
 def upload_lead_attachment():
     try:
-        lead_name = frappe.form_dict.get("lead_name")
-        uploaded_file = frappe.request.files.get("file")
+        data = frappe.local.form_dict
+        if hasattr(data, "files"): 
+            data = frappe.local.form_dict
+        
+        lead_name = data.get("lead_name")
+        files = data.get("files")  
 
         if not lead_name:
             frappe.local.response["http_status_code"] = 400
@@ -1855,22 +1914,48 @@ def upload_lead_attachment():
                 "message": "Missing lead_name"
             }
 
-        if not uploaded_file:
+        if not files or not isinstance(files, list):
             frappe.local.response["http_status_code"] = 400
             return {
                 "status_code": 400,
                 "status_message": "Bad Request",
-                "message": "No file provided"
+                "message": "Missing or malformed files list"
             }
 
-        saved_file = save_file(
-            uploaded_file.filename,
-            uploaded_file.stream.read(),
-            "Lead",
-            lead_name,
-            folder="Home/Attachments",
-            decode=False
-        )
+        results = []
+        for file_obj in files:
+            file_name = file_obj.get("file_name")
+            file_base64 = file_obj.get("file_base64")
+            res = {"file_name": file_name}
+
+            if not file_name or not file_base64:
+                res["status"] = "failed"
+                res["error"] = "Missing file_name or file_base64"
+            else:
+                try:
+                    if file_base64.startswith("data:"):
+                        file_base64 = file_base64.split(",", 1)[1]
+                    file_base64 = file_base64.strip()
+                    missing_padding = len(file_base64) % 4
+                    if missing_padding:
+                        file_base64 += "=" * (4 - missing_padding)
+                    file_data = base64.b64decode(file_base64)
+                    
+                    saved_file = save_file(
+                        file_name,
+                        file_data,
+                        "Lead",
+                        lead_name,
+                        folder="Home/Attachments",
+                        decode=False
+                    )
+                    res["status"] = "success"
+                    res["file_url"] = saved_file.file_url
+                except Exception as file_exc:
+                    res["status"] = "failed"
+                    res["error"] = str(file_exc)
+            
+            results.append(res)
 
         frappe.db.commit()
 
@@ -1878,13 +1963,10 @@ def upload_lead_attachment():
         return {
             "status_code": 200,
             "status_message": "Success",
-            "message": "File uploaded successfully",
-            "file_url": saved_file.file_url,
-            "file_name": saved_file.file_name
+            "results": results
         }
-
     except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Lead File Upload Error")
+        frappe.log_error(frappe.get_traceback(), "Lead File Upload Error (Batch)")
         frappe.local.response["http_status_code"] = 500
         return {
             "status_code": 500,
