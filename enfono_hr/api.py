@@ -1506,7 +1506,7 @@ def update_lead(lead_id, **kwargs):
             "request_type", "city", "state", "country"
         ]
 
-        valid_status = ["Lead", "Open", "Replied", "Interested", "Converted", "Do Not Contact"]
+        valid_status = ["Lead", "Open", "Replied","Opportunity" ,"Quotation","Lost Quotation", "Interested","Converted", "Do Not Contact"]
         valid_gender = ["Male", "Female", "Other"]
         valid_request_type = ["Product Enquiry", "Request for Information", "Suggestions", "Other"]
 
