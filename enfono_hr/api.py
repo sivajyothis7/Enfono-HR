@@ -1449,7 +1449,7 @@ def get_my_leads():
                 "reference_name": ["in", owned_lead_names],
                 "status": ["!=", "Cancelled"]
             },
-            fields=["reference_name", "owner"]
+            fields=["reference_name", "allocated_to"]
         )
         assigned_map = {}
         for todo in assigned_todos_on_owned:
