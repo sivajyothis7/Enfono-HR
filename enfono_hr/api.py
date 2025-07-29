@@ -1635,9 +1635,10 @@ def get_assignable_users():
         return send_response(500, "Error", "Unable to fetch user full names.")
 
 
+####Assign Lead 
 
 @frappe.whitelist()
-def assign_lead_to_user(lead_name, full_name):
+def assign_lead_to_user(lead_name=None, full_name=None):
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -1652,6 +1653,9 @@ def assign_lead_to_user(lead_name, full_name):
         if frappe.session.user == "Guest":
             return send_response(401, "Unauthorized", "Please login first.")
 
+        if not lead_name or not full_name:
+            return send_response(400, "Bad Request", "Both 'lead_name' and 'full_name' are required.")
+
         if not frappe.db.exists("Lead", lead_name):
             return send_response(404, "Not Found", f"Lead '{lead_name}' not found.")
 
@@ -1662,7 +1666,8 @@ def assign_lead_to_user(lead_name, full_name):
         if frappe.db.exists("ToDo", {
             "allocated_to": user_id,
             "reference_type": "Lead",
-            "reference_name": lead_name
+            "reference_name": lead_name,
+            "docstatus": ["!=", 2]  
         }):
             return send_response(409, "Conflict", f"Lead '{lead_name}' is already assigned to '{full_name}'.")
 
@@ -1678,10 +1683,9 @@ def assign_lead_to_user(lead_name, full_name):
 
         return send_response(200, "Success", f"Lead '{lead_name}' assigned to '{full_name}'.")
 
-    except Exception as e:
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Lead Assignment Failed")
         return send_response(500, "Error", "Something went wrong while assigning the lead.")
-
 
 
 ########Create Customer from Lead#####
