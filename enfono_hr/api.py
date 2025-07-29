@@ -1453,7 +1453,7 @@ def get_my_leads():
         )
         assigned_map = {}
         for todo in assigned_todos_on_owned:
-            assigned_map.setdefault(todo.reference_name, []).append(todo.owner)
+            assigned_map.setdefault(todo.reference_name, []).append(todo.allocated_to)
 
         for lead in owned_leads:
             lead["source"] = "Owner"
