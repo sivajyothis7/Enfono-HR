@@ -1439,12 +1439,10 @@ def get_my_leads():
         owned_leads = frappe.get_all("Lead",
             filters={"owner": user},
             fields=["name", "first_name", "last_name", "company_name", "status", "request_type", "email_id",
-                    "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation", "owner"]
+                    "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation"]
         )
         for lead in owned_leads:
             lead["source"] = "Owner"
-            full_name = frappe.db.get_value("User", lead["owner"], "full_name")
-            lead["lead_created_by"] = full_name or lead["owner"]
 
         assigned_todos = frappe.get_all("ToDo",
             filters={"reference_type": "Lead", "owner": user},
@@ -1466,9 +1464,9 @@ def get_my_leads():
             for lead in leads:
                 lead["source"] = "Assigned"
 
-               
-                owner_full_name = frappe.db.get_value("User", lead["owner"], "full_name")
-                lead["lead_created_by"] = owner_full_name or lead["owner"]
+                
+
+                lead["assigned_by"] = frappe.db.get_value("User", lead["owner"], "full_name") or lead["owner"]
 
             assigned_leads = leads
 
