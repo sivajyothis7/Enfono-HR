@@ -1438,30 +1438,39 @@ def get_my_leads():
 
         owned_leads = frappe.get_all("Lead",
             filters={"owner": user},
-            fields=["name", "first_name", "last_name","company_name", "status", "request_type", "email_id",
-                    "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation"]
+            fields=["name", "first_name", "last_name", "company_name", "status", "request_type", "email_id",
+                    "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation", "owner"]
         )
         for lead in owned_leads:
             lead["source"] = "Owner"
+            full_name = frappe.db.get_value("User", lead["owner"], "full_name")
+            lead["lead_created_by"] = full_name or lead["owner"]
 
-        assigned_lead_names = frappe.get_all("ToDo",
+        assigned_todos = frappe.get_all("ToDo",
             filters={"reference_type": "Lead", "owner": user},
-            fields=["reference_name"]
+            fields=["reference_name", "assigned_by"]
         )
-        assigned_lead_names = [d.reference_name for d in assigned_lead_names]
+        assigned_lead_names = [d.reference_name for d in assigned_todos]
+        assigned_by_map = {d.reference_name: d.assigned_by for d in assigned_todos if d.assigned_by}
 
         assigned_leads = []
         if assigned_lead_names:
-            assigned_leads = frappe.get_all("Lead",
+            leads = frappe.get_all("Lead",
                 filters=[
                     ["name", "in", assigned_lead_names],
-                    ["owner", "!=", user]  
+                    ["owner", "!=", user]
                 ],
-                fields=["name", "first_name", "last_name","company_name", "status", "request_type", "email_id",
-                        "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation"]
+                fields=["name", "first_name", "last_name", "company_name", "status", "request_type", "email_id",
+                        "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation", "owner"]
             )
-            for lead in assigned_leads:
+            for lead in leads:
                 lead["source"] = "Assigned"
+
+               
+                owner_full_name = frappe.db.get_value("User", lead["owner"], "full_name")
+                lead["lead_created_by"] = owner_full_name or lead["owner"]
+
+            assigned_leads = leads
 
         all_leads = owned_leads + assigned_leads
 
@@ -1473,7 +1482,6 @@ def get_my_leads():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_my_leads")
         return send_response("Could not retrieve leads.", 500, "Error")
-
 
 
 #####Modify Leads####
