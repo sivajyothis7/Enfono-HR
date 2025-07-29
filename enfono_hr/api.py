@@ -1663,12 +1663,17 @@ def assign_lead_to_user(lead_name=None, full_name=None):
         if not user_id:
             return send_response(404, "Not Found", f"No user found with name '{full_name}'.")
 
-        if frappe.db.exists("ToDo", {
-            "allocated_to": user_id,
-            "reference_type": "Lead",
-            "reference_name": lead_name,
-            "docstatus": ["!=", 2]  
-        }):
+        existing_todo = frappe.get_all("ToDo", 
+            filters={
+                "allocated_to": user_id,
+                "reference_type": "Lead",
+                "reference_name": lead_name,
+                "status": ["!=", "Cancelled"]
+            },
+            limit=1
+        )
+
+        if existing_todo:
             return send_response(409, "Conflict", f"Lead '{lead_name}' is already assigned to '{full_name}'.")
 
         frappe.get_doc({
@@ -1676,7 +1681,8 @@ def assign_lead_to_user(lead_name=None, full_name=None):
             "allocated_to": user_id,
             "reference_type": "Lead",
             "reference_name": lead_name,
-            "description": f"Lead assigned to {full_name}"
+            "description": f"Lead assigned to {full_name}",
+            "status": "Open"  
         }).insert(ignore_permissions=True)
 
         frappe.db.commit()
@@ -1686,6 +1692,7 @@ def assign_lead_to_user(lead_name=None, full_name=None):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Lead Assignment Failed")
         return send_response(500, "Error", "Something went wrong while assigning the lead.")
+
 
 
 ########Create Customer from Lead#####
