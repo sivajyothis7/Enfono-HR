@@ -1441,15 +1441,33 @@ def get_my_leads():
             fields=["name", "first_name", "last_name", "company_name", "status", "request_type", "email_id",
                     "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation"]
         )
+        owned_lead_names = [lead["name"] for lead in owned_leads]
+
+        assigned_todos_on_owned = frappe.get_all("ToDo",
+            filters={
+                "reference_type": "Lead",
+                "reference_name": ["in", owned_lead_names],
+                "status": ["!=", "Cancelled"]
+            },
+            fields=["reference_name", "owner"]
+        )
+        assigned_map = {}
+        for todo in assigned_todos_on_owned:
+            assigned_map.setdefault(todo.reference_name, []).append(todo.owner)
+
         for lead in owned_leads:
             lead["source"] = "Owner"
+            lead["assigned_to"] = assigned_map.get(lead["name"], [])
 
         assigned_todos = frappe.get_all("ToDo",
-            filters={"reference_type": "Lead", "owner": user},
-            fields=["reference_name", "assigned_by"]
+            filters={
+                "reference_type": "Lead",
+                "owner": user,
+                "status": ["!=", "Cancelled"]
+            },
+            fields=["reference_name"]
         )
         assigned_lead_names = [d.reference_name for d in assigned_todos]
-        assigned_by_map = {d.reference_name: d.assigned_by for d in assigned_todos if d.assigned_by}
 
         assigned_leads = []
         if assigned_lead_names:
@@ -1463,9 +1481,6 @@ def get_my_leads():
             )
             for lead in leads:
                 lead["source"] = "Assigned"
-
-                
-
                 lead["assigned_by"] = frappe.db.get_value("User", lead["owner"], "full_name") or lead["owner"]
 
             assigned_leads = leads
