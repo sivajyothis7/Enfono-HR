@@ -14,7 +14,8 @@ from frappe.model.workflow import apply_workflow
 from frappe.utils.file_manager import save_file
 import base64
 from frappe.utils.file_manager import save_file
-
+from frappe.utils import now_datetime
+from math import radians, cos, sin, asin, sqrt
 
 
 
@@ -258,6 +259,125 @@ def employee_checkin(employee=None, timestamp=None, latitude=None, longitude=Non
             message="Failed to record checkin.",
             status_code=500,
             status_message="Same Time Log"
+        )
+
+####Geo-fencing
+
+
+@frappe.whitelist()
+def geo_employee_checkin(employee=None, timestamp=None, latitude=None, longitude=None):
+    try:
+        def send_response(status_code, status_message, message, **extra_fields):
+            frappe.local.response["http_status_code"] = status_code
+            frappe.local.response.update({
+                "message": message,
+                "status_code": status_code,
+                "status_message": status_message,
+                **extra_fields
+            })
+
+        if frappe.session.user == "Guest":
+            return send_response(
+                message="Authentication required.",
+                status_code=401,
+                status_message="Unauthorized"
+            )
+
+        if not employee:
+            return send_response(
+                message="No employee record linked to the current user.",
+                status_code=404,
+                status_message="Employee not found"
+            )
+
+        if not frappe.db.exists("Employee", employee):
+            return send_response(
+                message="Invalid employee ID.",
+                status_code=404,
+                status_message="Employee not found"
+            )
+
+        if latitude is None or longitude is None:
+            return send_response(
+                message="Location data is required.",
+                status_code=400,
+                status_message="Latitude and longitude are mandatory"
+            )
+
+        allowed_locations = frappe.get_all(
+            "Employee Allowed Location",
+            filters={"parent": employee, "parenttype": "Employee"},
+            fields=["latitude", "longitude"]
+        )
+
+        if not allowed_locations:
+            return send_response(
+                message="No allowed geolocations configured for this employee.",
+                status_code=400,
+                status_message="Missing location config"
+            )
+
+        def haversine(lat1, lon1, lat2, lon2):
+            R = 6371000  
+            dlat = radians(lat2 - lat1)
+            dlon = radians(lon2 - lon1)
+            a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+            c = 2 * asin(sqrt(a))
+            return R * c
+
+        within_range = any(
+            haversine(float(latitude), float(longitude), float(loc.latitude), float(loc.longitude)) <= 30
+            for loc in allowed_locations
+        )
+
+        if not within_range:
+            return send_response(
+                message="You are not within the allowed check-in area (30m radius).",
+                status_code=403,
+                status_message="Out of range"
+            )
+
+        if not timestamp:
+            timestamp = now_datetime()
+
+        last_checkin = frappe.db.get_all(
+            "Employee Checkin",
+            filters={"employee": employee},
+            fields=["log_type"],
+            order_by="creation desc",
+            limit=1
+        )
+
+        next_log_type = "IN" if not last_checkin else (
+            "OUT" if last_checkin[0]["log_type"] == "IN" else "IN"
+        )
+
+        checkin = frappe.get_doc({
+            "doctype": "Employee Checkin",
+            "employee": employee,
+            "log_type": next_log_type,
+            "time": timestamp,
+            "latitude": latitude,
+            "longitude": longitude
+        })
+        checkin.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        return send_response(
+            message=f"{next_log_type} recorded successfully.",
+            status_code=200,
+            status_message="Checkin successful",
+            checkin_id=checkin.name,
+            log_type=next_log_type,
+            next_action="Check Out" if next_log_type == "IN" else "Check In"
+        )
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Smart Checkin API Error")
+        return send_response(
+            message="Failed to record checkin.",
+            status_code=500,
+            status_message="Server Error"
         )
 
 
