@@ -1443,6 +1443,40 @@ def get_lead_details(lead_name=None):
 
         lead = frappe.get_doc("Lead", lead_name)
 
+        todos = frappe.get_all("ToDo",
+            filters={
+                "reference_type": "Lead",
+                "reference_name": lead_name,
+                "status": ["!=", "Cancelled"]
+            },
+            fields=["owner", "assigned_by"]
+        )
+
+        assigned_to = list({
+            frappe.db.get_value("User", t.owner, "full_name") or t.owner
+            for t in todos if t.owner != lead.owner
+        })
+
+        assigned_by = None
+        for t in todos:
+            if t.assigned_by:
+                assigned_by = frappe.db.get_value("User", t.assigned_by, "full_name") or t.assigned_by
+                break
+
+        base_url = frappe.utils.get_url()
+
+        attachments = frappe.get_all("File",
+            filters={
+                "attached_to_doctype": "Lead",
+                "attached_to_name": lead_name
+            },
+            fields=["file_url", "file_name"]
+        )
+
+        for att in attachments:
+            if att.get("file_url"):
+                att["file_url"] = base_url + att["file_url"]
+
         lead_data = {
             "name": lead.name,
             "first_name": lead.first_name,
@@ -1460,6 +1494,9 @@ def get_lead_details(lead_name=None):
             "state": lead.state,
             "country": lead.country,
             "lead_owner": frappe.db.get_value("User", lead.owner, "full_name") or lead.owner,
+            "assigned_to": assigned_to,
+            "assigned_by": assigned_by,
+            "attachments": attachments
         }
 
         return send_response(
@@ -1472,8 +1509,6 @@ def get_lead_details(lead_name=None):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Get Lead Details Failed")
         return send_response("Could not fetch lead details.", 500, "Error")
-
-
 
 
 
@@ -1519,7 +1554,12 @@ def get_my_leads():
 
         for lead in owned_leads:
             lead["source"] = "Owner"
-            lead["assigned_to"] = assigned_map.get(lead["name"], [])
+            assigned_emails = assigned_map.get(lead["name"], [])
+            assigned_full_names = [
+                frappe.db.get_value("User", email, "full_name") or email
+                for email in assigned_emails
+            ]
+            lead["assigned_to"] = assigned_full_names
 
         assigned_todos = frappe.get_all("ToDo",
             filters={
@@ -1557,7 +1597,6 @@ def get_my_leads():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_my_leads")
         return send_response("Could not retrieve leads.", 500, "Error")
-
 
 #####Modify Leads####
 
