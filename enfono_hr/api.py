@@ -1415,6 +1415,68 @@ def create_lead(
         return send_response(500, "Error", "Failed to create lead.")
 
 
+#####Lead Detailed View
+
+@frappe.whitelist()
+def get_lead_details(lead_name=None):
+    def send_response(message, status_code, status_message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
+        frappe.local.response.update({
+            "http_status_code": status_code,
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        user = frappe.session.user
+        if not user or user == "Guest":
+            return send_response("Please log in first.", 401, "Unauthorized")
+
+        if not lead_name:
+            return send_response("'lead_name' is required.", 400, "Bad Request")
+
+        if not frappe.db.exists("Lead", lead_name):
+            return send_response(f"Lead '{lead_name}' not found.", 404, "Not Found")
+
+        lead = frappe.get_doc("Lead", lead_name)
+
+        lead_data = {
+            "name": lead.name,
+            "first_name": lead.first_name,
+            "last_name": lead.last_name,
+            "company_name": lead.company_name,
+            "status": lead.status,
+            "request_type": lead.request_type,
+            "email_id": lead.email_id,
+            "phone": lead.phone,
+            "mobile_no": lead.mobile_no,
+            "whatsapp_no": lead.whatsapp_no,
+            "website": lead.website,
+            "gender": lead.gender,
+            "city": lead.city,
+            "state": lead.state,
+            "country": lead.country,
+            "lead_owner": frappe.db.get_value("User", lead.owner, "full_name") or lead.owner,
+        }
+
+        return send_response(
+            f"Lead '{lead_name}' details fetched.",
+            200,
+            "Success",
+            lead=lead_data
+        )
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Get Lead Details Failed")
+        return send_response("Could not fetch lead details.", 500, "Error")
+
+
+
+
+
 #####View My Leads#####
 
 @frappe.whitelist()
