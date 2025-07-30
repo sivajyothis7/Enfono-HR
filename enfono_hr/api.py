@@ -1324,6 +1324,7 @@ def create_lead(
     mobile_no=None,
     whatsapp_no=None,
     website=None,
+    remarks=None,
     designation=None,
     gender=None,
     request_type=None,
@@ -1397,6 +1398,7 @@ def create_lead(
             "mobile_no": mobile_no,
             "whatsapp_no": whatsapp_no,
             "website": website,
+            "remarks": remarks,
             "designation": designation,
             "gender": gender,
             "request_type": request_type,
@@ -1489,6 +1491,7 @@ def get_lead_details(lead_name=None):
             "mobile_no": lead.mobile_no,
             "whatsapp_no": lead.whatsapp_no,
             "website": lead.website,
+            "remarks": lead.remarks,
             "gender": lead.gender,
             "city": lead.city,
             "state": lead.state,
@@ -1536,7 +1539,7 @@ def get_my_leads():
         owned_leads = frappe.get_all("Lead",
             filters={"owner": user},
             fields=["name", "first_name", "last_name", "company_name", "status", "request_type", "email_id",
-                    "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation"]
+                    "phone", "mobile_no","remarks", "whatsapp_no", "city", "state", "country", "creation"]
         )
         owned_lead_names = [lead["name"] for lead in owned_leads]
 
@@ -1624,7 +1627,7 @@ def update_lead(lead_id, **kwargs):
 
         editable_fields = [
             "first_name", "company_name", "status", "email_id", "phone",
-            "mobile_no", "whatsapp_no", "website", "designation", "gender",
+            "mobile_no", "whatsapp_no", "website", "remarks","designation", "gender",
             "request_type", "city", "state", "country"
         ]
 
