@@ -1445,7 +1445,6 @@ def create_lead(
     whatsapp_no=None,
     website=None,
     remarks=None,
-    designation=None,
     gender=None,
     request_type=None,
     city=None,
@@ -1519,7 +1518,6 @@ def create_lead(
             "whatsapp_no": whatsapp_no,
             "website": website,
             "remarks": remarks,
-            "designation": designation,
             "gender": gender,
             "request_type": request_type,
             "city": city,
@@ -1746,8 +1744,8 @@ def update_lead(lead_id, **kwargs):
             return send_response(403, "Forbidden", "You do not have permission to modify this lead.")
 
         editable_fields = [
-            "first_name", "company_name", "status", "email_id", "phone",
-            "mobile_no", "whatsapp_no", "website", "remarks","designation", "gender",
+            "first_name", "last_name","company_name", "status", "email_id", "phone",
+            "mobile_no", "whatsapp_no", "website", "remarks", "gender",
             "request_type", "city", "state", "country"
         ]
 
