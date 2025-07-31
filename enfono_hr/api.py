@@ -2025,6 +2025,17 @@ def create_quotation_from_lead(lead_name, description, rate):
 
 @frappe.whitelist()
 def get_quotations_by_user():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
+        frappe.local.response.update({
+            "http_status_code": status_code,
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
     try:
         user = frappe.session.user
         if user == "Guest":
@@ -2048,29 +2059,35 @@ def get_quotations_by_user():
         all_quotation_names = list(set(assigned_quotations + owned_quotations))
 
         if not all_quotation_names:
-            return {
-                "status": "success",
-                "data": []
-            }
+            return send_response(
+                200,
+                "Success",
+                "No quotations found.",
+                data=[]
+            )
 
         quotations = frappe.get_all(
             "Quotation",
             filters={"name": ["in", all_quotation_names]},
-            fields=["name", "customer_name", "quotation_to", "transaction_date", "status", "grand_total"],
+            fields=["name", "party_name","customer_name", "quotation_to", "transaction_date", "status", "grand_total"],
             order_by="modified desc"
         )
 
-        return {
-            "status": "success",
-            "data": quotations
-        }
+        return send_response(
+            200,
+            "Success",
+            "Quotations fetched successfully.",
+            data=quotations
+        )
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Get Quotations by User Failed")
-        return {
-            "status": "error",
-            "message": "An error occurred while fetching quotations."
-        }
+        return send_response(
+            500,
+            "Failed",
+            "An error occurred while fetching quotations.",
+            data=[]
+        )
 
 
 ########Geolocation
