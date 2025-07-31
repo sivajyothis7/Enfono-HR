@@ -6,19 +6,21 @@
  "engine": "InnoDB",
  "field_order": [
   "latitude",
-  "description",
+  "longitude",
   "column_break_bdku",
-  "longitude"
+  "description"
  ],
  "fields": [
   {
    "fieldname": "latitude",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Latitude"
   },
   {
    "fieldname": "description",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Description"
   },
   {
@@ -28,13 +30,14 @@
   {
    "fieldname": "longitude",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Longitude"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-07-30 17:47:23.392639",
+ "modified": "2025-07-31 14:54:28.768630",
  "modified_by": "Administrator",
  "module": "Enfono HR",
  "name": "Employee Allowed Location",
