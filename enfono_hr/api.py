@@ -2172,29 +2172,26 @@ def create_lead_geolocation(lead_name, latitude=None, longitude=None):
 
 @frappe.whitelist(allow_guest=True)
 def upload_lead_attachment():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
     try:
         data = frappe.local.form_dict
-        if hasattr(data, "files"): 
-            data = frappe.local.form_dict
-        
+
         lead_name = data.get("lead_name")
-        files = data.get("files")  
+        files = data.get("files") 
 
         if not lead_name:
-            frappe.local.response["http_status_code"] = 400
-            return {
-                "status_code": 400,
-                "status_message": "Bad Request",
-                "message": "Missing lead_name"
-            }
+            return send_response(400, "Bad Request", "Missing lead_name")
 
         if not files or not isinstance(files, list):
-            frappe.local.response["http_status_code"] = 400
-            return {
-                "status_code": 400,
-                "status_message": "Bad Request",
-                "message": "Missing or malformed files list"
-            }
+            return send_response(400, "Bad Request", "Missing or malformed files list")
 
         results = []
         for file_obj in files:
@@ -2214,7 +2211,7 @@ def upload_lead_attachment():
                     if missing_padding:
                         file_base64 += "=" * (4 - missing_padding)
                     file_data = base64.b64decode(file_base64)
-                    
+
                     saved_file = save_file(
                         file_name,
                         file_data,
@@ -2228,22 +2225,12 @@ def upload_lead_attachment():
                 except Exception as file_exc:
                     res["status"] = "failed"
                     res["error"] = str(file_exc)
-            
+
             results.append(res)
 
         frappe.db.commit()
+        return send_response(200, "Success", "Files uploaded successfully", results=results)
 
-        frappe.local.response["http_status_code"] = 200
-        return {
-            "status_code": 200,
-            "status_message": "Success",
-            "results": results
-        }
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Lead File Upload Error (Batch)")
-        frappe.local.response["http_status_code"] = 500
-        return {
-            "status_code": 500,
-            "status_message": "Error",
-            "message": "Something went wrong during upload"
-        }
+        return send_response(500, "Error", "Something went wrong during upload")
