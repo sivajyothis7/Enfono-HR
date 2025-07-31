@@ -290,7 +290,9 @@ def geo_employee_checkin(employee=None, timestamp=None, latitude=None, longitude
                 status_message="Employee not found"
             )
 
-        if not frappe.db.exists("Employee", employee):
+        employee_doc = frappe.get_doc("Employee", employee)
+
+        if not employee_doc:
             return send_response(
                 message="Invalid employee ID.",
                 status_code=404,
@@ -304,38 +306,39 @@ def geo_employee_checkin(employee=None, timestamp=None, latitude=None, longitude
                 status_message="Latitude and longitude are mandatory"
             )
 
-        allowed_locations = frappe.get_all(
-            "Employee Allowed Location",
-            filters={"parent": employee, "parenttype": "Employee"},
-            fields=["latitude", "longitude"]
-        )
-
-        if not allowed_locations:
-            return send_response(
-                message="No allowed geolocations configured for this employee.",
-                status_code=400,
-                status_message="Missing location config"
+        if not employee_doc.get("custom_disable_geo_fencing"):
+            allowed_locations = frappe.get_all(
+                "Employee Allowed Location",
+                filters={"parent": employee, "parenttype": "Employee"},
+                fields=["latitude", "longitude"]
             )
 
-        def haversine(lat1, lon1, lat2, lon2):
-            R = 6371000  
-            dlat = radians(lat2 - lat1)
-            dlon = radians(lon2 - lon1)
-            a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
-            c = 2 * asin(sqrt(a))
-            return R * c
+            if not allowed_locations:
+                return send_response(
+                    message="No allowed geolocations configured for this employee.",
+                    status_code=400,
+                    status_message="Missing location config"
+                )
 
-        within_range = any(
-            haversine(float(latitude), float(longitude), float(loc.latitude), float(loc.longitude)) <= 30
-            for loc in allowed_locations
-        )
+            def haversine(lat1, lon1, lat2, lon2):
+                R = 6371000
+                dlat = radians(lat2 - lat1)
+                dlon = radians(lon2 - lon1)
+                a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+                c = 2 * asin(sqrt(a))
+                return R * c
 
-        if not within_range:
-            return send_response(
-                message="You are not within the allowed check-in area (30m radius).",
-                status_code=403,
-                status_message="Out of range"
+            within_range = any(
+                haversine(float(latitude), float(longitude), float(loc.latitude), float(loc.longitude)) <= 30
+                for loc in allowed_locations
             )
+
+            if not within_range:
+                return send_response(
+                    message="You are not within the allowed check-in area (30m radius).",
+                    status_code=403,
+                    status_message="Out of range"
+                )
 
         if not timestamp:
             timestamp = now_datetime()
