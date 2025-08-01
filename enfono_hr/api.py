@@ -1767,7 +1767,7 @@ def update_lead(lead_id, **kwargs):
         editable_fields = [
             "first_name", "last_name","company_name", "status", "email_id", "phone",
             "mobile_no", "whatsapp_no", "website", "remarks", "gender",
-            "request_type", "city", "state", "country"
+            "request_type", "city", "state"
         ]
 
         valid_status = ["Lead", "Open", "Replied","Opportunity" ,"Quotation","Lost Quotation", "Interested","Converted", "Do Not Contact"]
