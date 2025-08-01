@@ -1761,8 +1761,8 @@ def update_lead(lead_id, **kwargs):
             return send_response(401, "Unauthorized", "Please login first.")
 
         lead = frappe.get_doc("Lead", lead_id)
-        if lead.lead_owner != user:
-            return send_response(403, "Forbidden", "You do not have permission to modify this lead.")
+        # if lead.lead_owner != user:
+        #     return send_response(403, "Forbidden", "You do not have permission to modify this lead.")
 
         editable_fields = [
             "first_name", "last_name","company_name", "status", "email_id", "phone",
