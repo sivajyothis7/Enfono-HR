@@ -2062,35 +2062,45 @@ def get_quotations_by_user():
         if user == "Guest":
             frappe.throw("You must be logged in to access this resource.")
 
-        assigned_quotations = frappe.get_all(
-            "ToDo",
-            filters={
-                "reference_type": "Quotation",
-                "owner": user
-            },
-            pluck="reference_name"
-        )
+        lead_name = frappe.form_dict.get("lead_name")
 
-        owned_quotations = frappe.get_all(
-            "Quotation",
-            filters={"owner": user},
-            pluck="name"
-        )
-
-        all_quotation_names = list(set(assigned_quotations + owned_quotations))
-
-        if not all_quotation_names:
-            return send_response(
-                200,
-                "Success",
-                "No quotations found.",
-                data=[]
+        if lead_name:
+            filters = {"party_name": lead_name}
+        else:
+            assigned_quotations = frappe.get_all(
+                "ToDo",
+                filters={
+                    "reference_type": "Quotation",
+                    "owner": user
+                },
+                pluck="reference_name"
             )
+
+            owned_quotations = frappe.get_all(
+                "Quotation",
+                filters={"owner": user},
+                pluck="name"
+            )
+
+            all_quotation_names = list(set(assigned_quotations + owned_quotations))
+
+            if not all_quotation_names:
+                return send_response(
+                    200,
+                    "Success",
+                    "No quotations found.",
+                    data=[]
+                )
+
+            filters = {"name": ["in", all_quotation_names]}
 
         quotations = frappe.get_all(
             "Quotation",
-            filters={"name": ["in", all_quotation_names]},
-            fields=["name", "party_name","customer_name", "quotation_to", "transaction_date", "status", "grand_total"],
+            filters=filters,
+            fields=[
+                "name", "party_name", "customer_name",
+                "quotation_to", "transaction_date", "status", "grand_total"
+            ],
             order_by="modified desc"
         )
 
