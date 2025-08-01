@@ -1659,8 +1659,11 @@ def get_my_leads():
 
         owned_leads = frappe.get_all("Lead",
             filters={"owner": user},
-            fields=["name", "first_name", "last_name", "company_name", "status", "request_type", "email_id",
-                    "phone", "mobile_no","remarks", "whatsapp_no", "city", "state", "country", "creation"]
+            fields=[
+                "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
+                "status", "request_type", "email_id", "phone", "mobile_no", "remarks",
+                "whatsapp_no", "city", "state", "country", "creation"
+            ]
         )
         owned_lead_names = [lead["name"] for lead in owned_leads]
 
@@ -1685,6 +1688,11 @@ def get_my_leads():
             ]
             lead["assigned_to"] = assigned_full_names
 
+            if lead.get("latitude") and lead.get("longitude"):
+                lat = lead["latitude"]
+                lon = lead["longitude"]
+                lead["google_maps_link"] = f"https://www.google.com/maps?q={lat},{lon}"
+
         assigned_todos = frappe.get_all("ToDo",
             filters={
                 "reference_type": "Lead",
@@ -1702,12 +1710,20 @@ def get_my_leads():
                     ["name", "in", assigned_lead_names],
                     ["owner", "!=", user]
                 ],
-                fields=["name", "first_name", "last_name", "company_name", "status", "request_type", "email_id",
-                        "phone", "mobile_no", "whatsapp_no", "city", "state", "country", "creation", "owner"]
+                fields=[
+                    "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
+                    "status", "request_type", "email_id", "phone", "mobile_no", "whatsapp_no",
+                    "city", "state", "country", "creation", "owner"
+                ]
             )
             for lead in leads:
                 lead["source"] = "Assigned"
                 lead["assigned_by"] = frappe.db.get_value("User", lead["owner"], "full_name") or lead["owner"]
+
+                if lead.get("latitude") and lead.get("longitude"):
+                    lat = lead["latitude"]
+                    lon = lead["longitude"]
+                    lead["google_maps_link"] = f"https://www.google.com/maps?q={lat},{lon}"
 
             assigned_leads = leads
 
@@ -1721,6 +1737,8 @@ def get_my_leads():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "get_my_leads")
         return send_response("Could not retrieve leads.", 500, "Error")
+
+
 
 #####Modify Leads####
 
