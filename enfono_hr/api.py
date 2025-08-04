@@ -517,14 +517,35 @@ def get_last_checkin_status():
 def get_app_version():
     doc = frappe.get_single("App Version Control")
 
-    frappe.local.response.update({
-        "status_code": 200,
-        "status_message": "Success",
-        "latest_android_version": getattr(doc, "latest_android_version", None),
-        "latest_ios_version": getattr(doc, "latest_ios_version", None),
-        "android_link": getattr(doc, "android_link", None),
-        "ios_link": getattr(doc, "ios_link", None)
-    })
+    if frappe.request.method == "POST":
+        android_version = frappe.form_dict.get("latest_android_version")
+        ios_version = frappe.form_dict.get("latest_ios_version")
+
+        if android_version:
+            doc.latest_android_version = android_version
+        if ios_version:
+            doc.latest_ios_version = ios_version
+
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        frappe.local.response.update({
+            "status_code": 200,
+            "status_message": "Updated Successfully",
+            "latest_android_version": doc.latest_android_version,
+            "latest_ios_version": doc.latest_ios_version
+        })
+
+    else:
+        frappe.local.response.update({
+            "status_code": 200,
+            "status_message": "Success",
+            "latest_android_version": doc.latest_android_version,
+            "latest_ios_version": doc.latest_ios_version,
+            "android_link": doc.android_link,
+            "ios_link": doc.ios_link
+        })
+
 
 
 #####Shift Type List#####
