@@ -2063,6 +2063,7 @@ def get_quotations_by_user():
             frappe.throw("You must be logged in to access this resource.")
 
         lead_name = frappe.form_dict.get("lead_name")
+        base_url = frappe.utils.get_url()
 
         if lead_name:
             filters = {"party_name": lead_name}
@@ -2104,6 +2105,22 @@ def get_quotations_by_user():
             order_by="modified desc"
         )
 
+        for quotation in quotations:
+            attachments = frappe.get_all(
+                "File",
+                filters={
+                    "attached_to_doctype": "Quotation",
+                    "attached_to_name": quotation["name"]
+                },
+                fields=["file_url", "file_name"]
+            )
+
+            for att in attachments:
+                if att.get("file_url"):
+                    att["file_url"] = base_url + att["file_url"]
+
+            quotation["attachments"] = attachments
+
         return send_response(
             200,
             "Success",
@@ -2119,7 +2136,6 @@ def get_quotations_by_user():
             "An error occurred while fetching quotations.",
             data=[]
         )
-
 
 ########Geolocation
 
@@ -2261,4 +2277,73 @@ def upload_lead_attachment():
 
     except Exception as e:
         frappe.log_error(frappe.get_traceback(), "Lead File Upload Error (Batch)")
+        return send_response(500, "Error", "Something went wrong during upload")
+
+
+
+#####Quotation Attachment
+
+@frappe.whitelist(allow_guest=True)
+def upload_quotation_attachment():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        data = frappe.local.form_dict
+
+        quotation_name = data.get("quotation_name")
+        files = data.get("files")
+
+        if not quotation_name:
+            return send_response(400, "Bad Request", "Missing quotation_name")
+
+        if not files or not isinstance(files, list):
+            return send_response(400, "Bad Request", "Missing or malformed files list")
+
+        results = []
+        for file_obj in files:
+            file_name = file_obj.get("file_name")
+            file_base64 = file_obj.get("file_base64")
+            res = {"file_name": file_name}
+
+            if not file_name or not file_base64:
+                res["status"] = "failed"
+                res["error"] = "Missing file_name or file_base64"
+            else:
+                try:
+                    if file_base64.startswith("data:"):
+                        file_base64 = file_base64.split(",", 1)[1]
+                    file_base64 = file_base64.strip()
+                    missing_padding = len(file_base64) % 4
+                    if missing_padding:
+                        file_base64 += "=" * (4 - missing_padding)
+                    file_data = base64.b64decode(file_base64)
+
+                    saved_file = save_file(
+                        file_name,
+                        file_data,
+                        "Quotation",
+                        quotation_name,
+                        folder="Home/Attachments",
+                        decode=False
+                    )
+                    res["status"] = "success"
+                    res["file_url"] = saved_file.file_url
+                except Exception as file_exc:
+                    res["status"] = "failed"
+                    res["error"] = str(file_exc)
+
+            results.append(res)
+
+        frappe.db.commit()
+        return send_response(200, "Success", "Files uploaded successfully", results=results)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Quotation File Upload Error (Batch)")
         return send_response(500, "Error", "Something went wrong during upload")
