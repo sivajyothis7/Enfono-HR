@@ -7,7 +7,7 @@ from datetime import timedelta
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, format_datetime, format_duration
+from frappe.utils import cint, flt, format_datetime
 
 
 def execute(filters=None):
@@ -25,13 +25,13 @@ def get_columns():
 			"fieldname": "employee",
 			"fieldtype": "Link",
 			"options": "Employee",
-			"width": 220,
+			"width": 180,
 		},
 		{
+			"label": _("Full Name"),
 			"fieldname": "employee_name",
 			"fieldtype": "Data",
-			"label": _("Full Name"),
-			"width": 200,  # now visible
+			"width": 220,
 		},
 		{
 			"label": _("Shift"),
@@ -175,14 +175,13 @@ def get_chart_data(data):
 		total_shift_records[entry.shift] += 1
 
 	labels = [_(d) for d in list(total_shift_records)]
-	chart = {
+	return {
 		"data": {
 			"labels": labels,
 			"datasets": [{"name": _("Shift"), "values": list(total_shift_records.values())}],
 		},
 		"type": "percentage",
 	}
-	return chart
 
 
 def get_query(filters):
@@ -197,7 +196,7 @@ def get_query(filters):
 		.select(
 			attendance.name,
 			attendance.employee,
-			attendance.employee_name,  
+			attendance.employee_name,
 			attendance.shift,
 			attendance.attendance_date,
 			attendance.status,
@@ -236,6 +235,17 @@ def get_query(filters):
 			query = query.where(attendance[filter] == filters[filter])
 
 	return query
+
+
+def format_hms(td):
+	"""Convert timedelta or seconds to 'Hh Mm Ss' format."""
+	if not td:
+		return ""
+	total_seconds = int(td.total_seconds()) if hasattr(td, "total_seconds") else int(td)
+	hours = total_seconds // 3600
+	minutes = (total_seconds % 3600) // 60
+	seconds = total_seconds % 60
+	return f"{hours}h {minutes}m {seconds}s"
 
 
 def update_data(data, filters):
@@ -286,9 +296,8 @@ def update_late_entry(entry, consider_grace_period):
 	elif entry.in_time and entry.in_time > entry.shift_start:
 		entry.late_entry = 1
 		entry.late_entry_hrs = entry.in_time - entry.shift_start
-
 	if entry.late_entry_hrs:
-		entry.late_entry_hrs = str(entry.late_entry_hrs)
+		entry.late_entry_hrs = format_hms(entry.late_entry_hrs)
 
 
 def update_early_exit(entry, consider_grace_period):
@@ -300,6 +309,5 @@ def update_early_exit(entry, consider_grace_period):
 	elif entry.out_time and entry.out_time < entry.shift_end:
 		entry.early_exit = 1
 		entry.early_exit_hrs = entry.shift_end - entry.out_time
-
 	if entry.early_exit_hrs:
-		entry.early_exit_hrs = str(entry.early_exit_hrs)
+		entry.early_exit_hrs = format_hms(entry.early_exit_hrs)
