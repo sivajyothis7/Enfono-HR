@@ -1502,6 +1502,9 @@ def create_lead(
         valid_gender = ["Male", "Female", "Other"]
         valid_request_type = [
             "Product Enquiry",
+            "Catalogue Enquiry",
+            "Measurement/Remeasurement",
+            "Fitting/Refitting",
             "Request for Information",
             "Suggestions",
             "Other"
@@ -1793,7 +1796,7 @@ def update_lead(lead_id, **kwargs):
 
         valid_status = ["Lead", "Open", "Replied","Opportunity" ,"Quotation","Lost Quotation", "Interested","Converted", "Do Not Contact"]
         valid_gender = ["Male", "Female", "Other"]
-        valid_request_type = ["Product Enquiry", "Request for Information", "Suggestions", "Other"]
+        valid_request_type = ["Product Enquiry", "Catalogue Enquiry", "Measurement/Remeasurement", "Fitting/Refitting", "Request for Information", "Suggestions", "Other"]
 
         for field, value in kwargs.items():
             if field in editable_fields:
