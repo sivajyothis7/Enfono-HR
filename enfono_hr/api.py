@@ -2703,7 +2703,7 @@ def list_my_payment_advances():
             return send_response(404, "Not Found", "No employee linked to the current user.")
 
         advances = frappe.get_all(
-            "Payment Advance",
+            "Employee Advance",
             filters={"employee": employee},
             fields=["name", "posting_date", "advance_amount", "paid_amount", "status", "docstatus"],
             order_by="posting_date desc"
@@ -2760,7 +2760,7 @@ def create_payment_advance(data):
             import json
             data = json.loads(data)
 
-        advance = frappe.new_doc("Payment Advance")
+        advance = frappe.new_doc("Employee Advance")
         advance.employee = employee
         advance.posting_date = data.get("posting_date")
         advance.advance_amount = data.get("advance_amount")
@@ -2804,7 +2804,7 @@ def update_payment_advance(name, data):
         if not employee:
             return send_response(404, "Not Found", "No employee linked to the current user.")
 
-        advance = frappe.get_doc("Payment Advance", name)
+        advance = frappe.get_doc("Employee Advance", name)
         if advance.employee != employee:
             return send_response(403, "Forbidden", "You cannot update this Payment Advance.")
 
