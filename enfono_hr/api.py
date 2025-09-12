@@ -2449,8 +2449,11 @@ def get_monthly_attendance(employee=None, year=None, month=None):
 ## Salary Slip
 
 
-@frappe.whitelist()
-def list_salary_slips(employee=None):
+@frappe.whitelist(allow_guest=True)
+def list_salary_slips():
+    # Get employee from query parameters
+    employee = frappe.form_dict.get("employee")
+
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -2469,7 +2472,7 @@ def list_salary_slips(employee=None):
             "Salary Slip",
             filters={
                 "employee": employee,
-                "docstatus": 1   
+                # "docstatus": 1   # uncomment if you want only submitted
             },
             fields=[
                 "name", "employee", "employee_name", "start_date", "end_date",
