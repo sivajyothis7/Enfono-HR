@@ -1638,6 +1638,7 @@ def get_lead_details(lead_name=None):
             "last_name": lead.last_name,
             "company_name": lead.company_name,
             "status": lead.status,
+            "lead_source": lead.lead_source,
             "request_type": lead.request_type,
             "email_id": lead.email_id,
             "phone": lead.phone,
