@@ -2438,7 +2438,7 @@ def get_monthly_attendance(employee=None, year=None, month=None):
 
         leave_dates = set()
         for leave in leave_apps:
-            if leave["status"] != "Approved":  
+            if leave["status"] != "Approved":
                 continue
             from_date = frappe.utils.getdate(leave["from_date"])
             to_date = frappe.utils.getdate(leave["to_date"])
@@ -2446,9 +2446,9 @@ def get_monthly_attendance(employee=None, year=None, month=None):
                 d = from_date + timedelta(days=i)
                 leave_dates.add(d)
 
-        leave_dates -= attendance_dates
+        final_leave_dates = leave_dates - attendance_dates
 
-        for d in leave_dates:
+        for d in final_leave_dates:
             attendance.append({"attendance_date": d, "status": "On Leave"})
 
         if not attendance:
@@ -2462,7 +2462,13 @@ def get_monthly_attendance(employee=None, year=None, month=None):
                 attendance=[]
             )
 
-        attendance = sorted(attendance, key=lambda x: x["attendance_date"])
+        seen = set()
+        unique_attendance = []
+        for record in sorted(attendance, key=lambda x: x["attendance_date"]):
+            date_obj = frappe.utils.getdate(record["attendance_date"])
+            if date_obj not in seen:
+                unique_attendance.append(record)
+                seen.add(date_obj)
 
         return send_response(
             200,
@@ -2471,7 +2477,7 @@ def get_monthly_attendance(employee=None, year=None, month=None):
             employee=employee,
             year=year,
             month=month,
-            attendance=attendance
+            attendance=unique_attendance
         )
 
     except Exception:
