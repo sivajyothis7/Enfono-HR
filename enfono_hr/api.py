@@ -2433,15 +2433,17 @@ def get_monthly_attendance(employee=None, year=None, month=None):
                 "from_date": ["<=", end_date],
                 "to_date": [">=", start_date]
             },
-            fields=["from_date", "to_date"]
+            fields=["from_date", "to_date", "status"]
         )
 
         leave_dates = set()
         for leave in leave_apps:
+            if leave["status"] != "Approved":  
+                continue
             from_date = frappe.utils.getdate(leave["from_date"])
             to_date = frappe.utils.getdate(leave["to_date"])
             for i in range((to_date - from_date).days + 1):
-                d = from_date + timedelta(days=i)  
+                d = from_date + timedelta(days=i)
                 leave_dates.add(d)
 
         leave_dates -= attendance_dates
@@ -2477,12 +2479,12 @@ def get_monthly_attendance(employee=None, year=None, month=None):
         return send_response(500, "Error", "Unable to fetch monthly attendance due to a server error.")
 
 
+
 ## Salary Slip
 
 
 @frappe.whitelist(allow_guest=True)
 def list_salary_slips():
-    # Get employee from query parameters
     employee = frappe.form_dict.get("employee")
 
     def send_response(status_code, status_message, message, **extra_fields):
