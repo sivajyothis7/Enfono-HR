@@ -2386,6 +2386,9 @@ def upload_quotation_attachment():
 ##Monthly Attendance View
 
 
+from datetime import timedelta
+import frappe
+
 @frappe.whitelist()
 def get_monthly_attendance(employee=None, year=None, month=None):
     def send_response(status_code, status_message, message, **extra_fields):
@@ -2438,7 +2441,7 @@ def get_monthly_attendance(employee=None, year=None, month=None):
             from_date = frappe.utils.getdate(leave["from_date"])
             to_date = frappe.utils.getdate(leave["to_date"])
             for i in range((to_date - from_date).days + 1):
-                d = from_date + frappe.utils.timedelta(days=i)
+                d = from_date + timedelta(days=i)  
                 leave_dates.add(d)
 
         leave_dates -= attendance_dates
