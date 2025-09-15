@@ -17,7 +17,7 @@ from frappe.utils.file_manager import save_file
 from frappe.utils import now_datetime
 from math import radians, cos, sin, asin, sqrt
 from frappe.utils.pdf import get_pdf
-
+from frappe.utils import today
 
 
 
