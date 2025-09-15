@@ -2688,7 +2688,6 @@ def update_expense_claim(name, employee=None,  expenses=None):
 
 @frappe.whitelist()
 def list_my_payment_advances():
-    
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -2700,36 +2699,31 @@ def list_my_payment_advances():
         return None
 
     try:
-        user = frappe.session.user
+        employee = frappe.form_dict.get("employee")
 
-        employee = frappe.db.get_value("Employee", {"user_id": user})
         if not employee:
-            return send_response(404, "Not Found", "No employee linked to the current user.")
+            user = frappe.session.user
+            employee = frappe.db.get_value("Employee", {"user_id": user})
+
+        if not employee:
+            return send_response(404, "Not Found", "No employee found or linked to current user.")
 
         advances = frappe.get_all(
             "Employee Advance",
             filters={"employee": employee},
-            fields=["name", "posting_date", "advance_amount", "paid_amount", "status", "docstatus"],
+            fields=["name", "posting_date", "advance_amount", "paid_amount", "status"],
             order_by="posting_date desc"
         )
 
         if not advances:
             return send_response(
-                200,
-                "Success",
-                "No payment advances found.",
-                employee=employee,
-                payment_advances=[]
+                200, "Success", "No payment advances found.",
+                employee=employee, payment_advances=[]
             )
 
-        
-
         return send_response(
-            200,
-            "Success",
-            "Payment advances fetched successfully.",
-            employee=employee,
-            payment_advances=advances
+            200, "Success", "Payment advances fetched successfully.",
+            employee=employee, payment_advances=advances
         )
 
     except Exception:
@@ -2737,13 +2731,16 @@ def list_my_payment_advances():
         return send_response(500, "Error", "Unable to fetch payment advances.")
 
 
-
-
 ### Create Payment Advance
 
+
 @frappe.whitelist(allow_guest=False)
-def create_payment_advance(data):
-    
+def create_employee_advance(**kwargs):
+    """
+    Create an Employee Advance, optionally passing 'employee' in request.
+    If not passed, uses logged-in user → Employee.
+    Behaves like Expense Claim.
+    """
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -2755,24 +2752,38 @@ def create_payment_advance(data):
         return None
 
     try:
-        user = frappe.session.user
-        employee = frappe.db.get_value("Employee", {"user_id": user})
-        if not employee:
-            return send_response(404, "Not Found", "No employee linked to the current user.")
-
+        data = kwargs or frappe.form_dict
         if isinstance(data, str):
             import json
             data = json.loads(data)
 
+        employee = data.get("employee")
+        if not employee:
+            user = frappe.session.user
+            employee = frappe.db.get_value("Employee", {"user_id": user})
+
+        if not employee:
+            return send_response(404, "Not Found", "No employee specified or linked to current user.")
+
+        if not data.get("advance_amount"):
+            return send_response(400, "Bad Request", "Advance amount is required.")
+
+        exchange_rate = data.get("exchange_rate")
+        try:
+            exchange_rate = float(exchange_rate)
+            if exchange_rate <= 0:
+                exchange_rate = 1
+        except:
+            exchange_rate = 1
+
         advance = frappe.new_doc("Employee Advance")
         advance.employee = employee
-        advance.posting_date = data.get("posting_date")
+        advance.posting_date = data.get("posting_date") or today()
         advance.advance_amount = data.get("advance_amount")
-        advance.purpose = data.get("purpose")
-        advance.mode_of_payment = data.get("mode_of_payment")
-        advance.company = data.get("company")
+        advance.purpose = data.get("purpose") or "Employee Advance"
+        advance.exchange_rate = exchange_rate  
 
-        advance.insert(ignore_permissions=True)
+        advance.insert(ignore_permissions=True) 
         frappe.db.commit()
 
         return send_response(
@@ -2785,6 +2796,7 @@ def create_payment_advance(data):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Create Payment Advance Failed")
         return send_response(500, "Error", "Unable to create payment advance.")
+
 
 
 ## Update Payment Advance
