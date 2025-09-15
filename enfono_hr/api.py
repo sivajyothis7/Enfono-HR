@@ -2417,8 +2417,34 @@ def get_monthly_attendance(employee=None, year=None, month=None):
                 "employee": employee,
                 "attendance_date": ["between", [start_date, end_date]]
             },
-            fields=["attendance_date", "status",]
+            fields=["attendance_date", "status"]
         )
+
+        attendance_dates = {frappe.utils.getdate(a["attendance_date"]) for a in attendance}
+
+        leave_apps = frappe.get_all(
+            "Leave Application",
+            filters={
+                "employee": employee,
+                "status": "Approved",
+                "from_date": ["<=", end_date],
+                "to_date": [">=", start_date]
+            },
+            fields=["from_date", "to_date"]
+        )
+
+        leave_dates = set()
+        for leave in leave_apps:
+            from_date = frappe.utils.getdate(leave["from_date"])
+            to_date = frappe.utils.getdate(leave["to_date"])
+            for i in range((to_date - from_date).days + 1):
+                d = from_date + frappe.utils.timedelta(days=i)
+                leave_dates.add(d)
+
+        leave_dates -= attendance_dates
+
+        for d in leave_dates:
+            attendance.append({"attendance_date": d, "status": "On Leave"})
 
         if not attendance:
             return send_response(
@@ -2430,6 +2456,8 @@ def get_monthly_attendance(employee=None, year=None, month=None):
                 month=month,
                 attendance=[]
             )
+
+        attendance = sorted(attendance, key=lambda x: x["attendance_date"])
 
         return send_response(
             200,
