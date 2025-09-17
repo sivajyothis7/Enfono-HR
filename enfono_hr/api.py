@@ -1693,7 +1693,7 @@ def get_my_leads():
         owned_leads = frappe.get_all("Lead",
             filters={"owner": user},
             fields=[
-                "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
+                "name", "custom_date","updated_date","first_name", "last_name", "company_name", "location", "latitude", "longitude",
                 "status", "request_type", "email_id", "phone", "mobile_no", "remarks",
                 "whatsapp_no", "city", "state", "country", "creation"
             ],
@@ -1730,7 +1730,7 @@ def get_my_leads():
         assigned_todos = frappe.get_all("ToDo",
             filters={
                 "reference_type": "Lead",
-                "owner": user,
+                "allocated_to": user,
                 "status": ["!=", "Cancelled"]
             },
             fields=["reference_name"]
@@ -1745,7 +1745,7 @@ def get_my_leads():
                     ["owner", "!=", user]
                 ],
                 fields=[
-                    "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
+                    "name", "custom_date","updated_date","first_name", "last_name", "company_name", "location", "latitude", "longitude",
                     "status", "request_type", "email_id", "phone", "mobile_no", "whatsapp_no",
                     "city", "state", "country", "creation", "owner"
                 ]
@@ -1799,7 +1799,7 @@ def update_lead(lead_id, **kwargs):
         #     return send_response(403, "Forbidden", "You do not have permission to modify this lead.")
 
         editable_fields = [
-            "first_name", "last_name","company_name", "status","lead_source", "email_id", "phone",
+            "first_name", "last_name","custom_date","updated_date","company_name", "status","lead_source", "email_id", "phone",
             "mobile_no", "whatsapp_no", "website", "remarks", "gender",
             "request_type", "city", "state"
         ]
@@ -1970,9 +1970,66 @@ def assign_lead_to_user(lead_name=None, full_name=None):
         frappe.log_error(frappe.get_traceback(), "Lead Assignment Failed")
         return send_response(500, "Error", "Something went wrong while assigning the lead.")
 
+### Search Lead
+
+@frappe.whitelist()
+def search_leads(phone=None, mobile=None, first_name=None):
+    def send_response(message, status_code, status_message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
+        frappe.local.response.update({
+            "http_status_code": status_code,
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        if not frappe.session.user or frappe.session.user == "Guest":
+            return send_response("Please log in first.", 401, "Unauthorized")
+
+        filters = []
+
+        if phone:
+            filters.append(["Lead", "phone", "like", f"%{phone}%"])
+        if mobile:
+            filters.append(["Lead", "mobile_no", "like", f"%{mobile}%"])
+        if first_name:
+            filters.append(["Lead", "first_name", "like", f"%{first_name}%"])
+
+        if not filters:
+            return send_response("Please provide phone, mobile number or first name to search.", 400, "Bad Request")
+
+        leads = frappe.get_all("Lead",
+            filters=filters,
+            fields=[
+                "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
+                "status", "request_type", "email_id", "phone", "mobile_no", "whatsapp_no", "remarks",
+                "city", "state", "country", "creation", "owner"
+            ],
+            order_by="modified desc"
+        )
+
+        for lead in leads:
+            if lead.get("latitude") and lead.get("longitude"):
+                lat = lead["latitude"]
+                lon = lead["longitude"]
+                lead["google_maps_link"] = f"https://www.google.com/maps?q={lat},{lon}"
+
+        if not leads:
+            return send_response("No leads found.", 200, "Success", leads=[])
+
+        return send_response("Leads fetched successfully.", 200, "Success", leads=leads)
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "search_leads")
+        return send_response("Could not search leads.", 500, "Error")
+
 
 
 ########Create Customer from Lead#####
+
 
 @frappe.whitelist()
 def create_customer_from_lead(lead_name):
@@ -2726,7 +2783,7 @@ def update_expense_claim(name, employee=None,  expenses=None):
 
 
 @frappe.whitelist()
-def list_my_payment_advances():
+def list_my_payment_advances(name=None):
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -2738,36 +2795,48 @@ def list_my_payment_advances():
         return None
 
     try:
-        employee = frappe.form_dict.get("employee")
-
-        if not employee:
-            user = frappe.session.user
-            employee = frappe.db.get_value("Employee", {"user_id": user})
-
+        employee = frappe.db.get_value("Employee", {"user_id": frappe.session.user})
         if not employee:
             return send_response(404, "Not Found", "No employee found or linked to current user.")
 
-        advances = frappe.get_all(
-            "Employee Advance",
-            filters={"employee": employee},
-            fields=["name", "posting_date", "advance_amount", "paid_amount", "status"],
-            order_by="posting_date desc"
-        )
+        if name:
+            advance = frappe.get_doc("Employee Advance", name)
 
-        if not advances:
-            return send_response(
-                200, "Success", "No payment advances found.",
-                employee=employee, payment_advances=[]
+            if advance.employee != employee and "HR Manager" not in frappe.get_roles(frappe.session.user):
+                return send_response(403, "Forbidden", "You are not allowed to view this advance.")
+
+            advance_data = frappe.db.get_value(
+                "Employee Advance",
+                advance.name,
+                ["name", "employee_name","posting_date", "advance_amount", "paid_amount", "status" ],
+                as_dict=True
             )
 
-        return send_response(
-            200, "Success", "Payment advances fetched successfully.",
-            employee=employee, payment_advances=advances
-        )
+            return send_response(
+                200, "Success", "Payment advance fetched successfully.",
+                payment_advance=advance_data
+            )
+
+        else:
+            advances = frappe.get_all(
+                "Employee Advance",
+                filters={"employee": employee},
+                fields=["name", "posting_date", "advance_amount", "paid_amount", "status"],
+                order_by="posting_date desc"
+            )
+
+            if not advances:
+                return send_response(200, "Success", "No payment advances found.", payment_advances=[])
+
+            return send_response(
+                200, "Success", "Payment advances fetched successfully.",
+                payment_advances=advances
+            )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "List My Payment Advances Failed")
+        frappe.log_error(frappe.get_traceback(), "Payment Advances API Failed")
         return send_response(500, "Error", "Unable to fetch payment advances.")
+
 
 
 ### Create Payment Advance
@@ -2776,9 +2845,9 @@ def list_my_payment_advances():
 @frappe.whitelist(allow_guest=False)
 def create_employee_advance(**kwargs):
     """
-    Create an Employee Advance, optionally passing 'employee' in request.
-    If not passed, uses logged-in user → Employee.
-    Behaves like Expense Claim.
+    Create an Employee Advance.
+    Limit: Cannot exceed 30% of monthly salary (calculated from yearly CTC in Employee profile).
+    repay_unclaimed_amount_from_salary → defaults to 1
     """
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
@@ -2804,8 +2873,29 @@ def create_employee_advance(**kwargs):
         if not employee:
             return send_response(404, "Not Found", "No employee specified or linked to current user.")
 
-        if not data.get("advance_amount"):
+        advance_amount = data.get("advance_amount")
+        if not advance_amount:
             return send_response(400, "Bad Request", "Advance amount is required.")
+
+        try:
+            advance_amount = float(advance_amount)
+        except:
+            return send_response(400, "Bad Request", "Invalid advance amount.")
+
+        yearly_ctc = frappe.db.get_value("Employee", employee, "ctc")
+        if not yearly_ctc:
+            return send_response(400, "Bad Request", "Employee CTC is not set in profile.")
+
+        monthly_salary = yearly_ctc / 12
+        max_advance = monthly_salary * 0.3
+
+        if advance_amount > max_advance:
+            return send_response(
+                400,
+                "Bad Request",
+                f"Advance amount cannot exceed 30% of monthly salary. "
+                f"Max allowed: {max_advance:.2f}"
+            )
 
         exchange_rate = data.get("exchange_rate")
         try:
@@ -2818,69 +2908,57 @@ def create_employee_advance(**kwargs):
         advance = frappe.new_doc("Employee Advance")
         advance.employee = employee
         advance.posting_date = data.get("posting_date") or today()
-        advance.advance_amount = data.get("advance_amount")
+        advance.advance_amount = advance_amount
         advance.purpose = data.get("purpose") or "Employee Advance"
         advance.exchange_rate = exchange_rate  
 
-        advance.insert(ignore_permissions=True) 
+        if hasattr(advance, "repay_unclaimed_amount_from_salary"):
+            advance.repay_unclaimed_amount_from_salary = 1
+
+        advance.insert(ignore_permissions=True)
         frappe.db.commit()
 
         return send_response(
             201,
             "Success",
-            "Payment Advance created successfully.",
-            payment_advance=advance.name
+            "Employee Advance created successfully.",
+            employee_advance=advance.name
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "Create Payment Advance Failed")
-        return send_response(500, "Error", "Unable to create payment advance.")
-
-
+        frappe.log_error(frappe.get_traceback(), "Create Employee Advance Failed")
+        return send_response(500, "Error", "Unable to create employee advance.")
 
 ## Update Payment Advance
 
-@frappe.whitelist(allow_guest=False)
-def update_payment_advance(name, data):
-   
-    def send_response(status_code, status_message, message, **extra_fields):
-        frappe.local.response["http_status_code"] = status_code
-        frappe.local.response.update({
-            "status_code": status_code,
-            "status_message": status_message,
-            "message": message,
-            **extra_fields
-        })
-        return None
-
+@frappe.whitelist()
+def update_employee_advance(name, posting_date=None, purpose=None, advance_amount=None, employee=None):
     try:
-        user = frappe.session.user
-        employee = frappe.db.get_value("Employee", {"user_id": user})
-        if not employee:
-            return send_response(404, "Not Found", "No employee linked to the current user.")
+        doc = frappe.get_doc("Employee Advance", name)
 
-        advance = frappe.get_doc("Employee Advance", name)
-        if advance.employee != employee:
-            return send_response(403, "Forbidden", "You cannot update this Payment Advance.")
+        if posting_date:
+            doc.posting_date = posting_date
+        if purpose:
+            doc.purpose = purpose
+        if advance_amount:
+            doc.advance_amount = advance_amount
+        
 
-        if isinstance(data, str):
-            import json
-            data = json.loads(data)
-
-        for field, value in data.items():
-            if field in ["posting_date", "advance_amount", "purpose", "mode_of_payment"]:
-                advance.set(field, value)
-
-        advance.save(ignore_permissions=True)
+        doc.save(ignore_permissions=True)
         frappe.db.commit()
 
-        return send_response(
-            200,
-            "Success",
-            "Payment Advance updated successfully.",
-            payment_advance=advance.name
-        )
-
-    except Exception:
-        frappe.log_error(frappe.get_traceback(), "Update Payment Advance Failed")
-        return send_response(500, "Error", "Unable to update payment advance.")
+        return {
+            "success": True,
+            "message": "Employee Advance updated successfully",
+            "data": {
+                "name": doc.name,
+                "posting_date": doc.posting_date,
+                "purpose": doc.purpose,
+                "advance_amount": doc.advance_amount,
+                "employee": doc.employee,
+                "status": doc.status
+            }
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Update Employee Advance API")
+        return {"success": False, "error": str(e)}
