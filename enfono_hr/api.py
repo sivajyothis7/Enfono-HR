@@ -1636,6 +1636,8 @@ def get_lead_details(lead_name=None):
             "name": lead.name,
             "first_name": lead.first_name,
             "last_name": lead.last_name,
+            "Date": lead.custom_date,
+            "Updated Date": lead.updated_date,
             "company_name": lead.company_name,
             "status": lead.status,
             "lead_source": lead.lead_source,
@@ -1970,7 +1972,7 @@ def assign_lead_to_user(lead_name=None, full_name=None):
         frappe.log_error(frappe.get_traceback(), "Lead Assignment Failed")
         return send_response(500, "Error", "Something went wrong while assigning the lead.")
 
-### Search Lead
+### Search Leads
 
 @frappe.whitelist()
 def search_leads(phone=None, mobile=None, first_name=None):
@@ -1989,20 +1991,22 @@ def search_leads(phone=None, mobile=None, first_name=None):
         if not frappe.session.user or frappe.session.user == "Guest":
             return send_response("Please log in first.", 401, "Unauthorized")
 
-        filters = []
+        user = frappe.session.user
+        conditions = []
 
         if phone:
-            filters.append(["Lead", "phone", "like", f"%{phone}%"])
+            conditions.append(["Lead", "phone", "like", f"%{phone}%"])
         if mobile:
-            filters.append(["Lead", "mobile_no", "like", f"%{mobile}%"])
+            conditions.append(["Lead", "mobile_no", "like", f"%{mobile}%"])
         if first_name:
-            filters.append(["Lead", "first_name", "like", f"%{first_name}%"])
+            conditions.append(["Lead", "first_name", "like", f"%{first_name}%"])
 
-        if not filters:
+        if not conditions:
             return send_response("Please provide phone, mobile number or first name to search.", 400, "Bad Request")
 
-        leads = frappe.get_all("Lead",
-            filters=filters,
+        owned_leads = frappe.get_all(
+            "Lead",
+            filters=conditions + [["Lead", "owner", "=", user]],
             fields=[
                 "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
                 "status", "request_type", "email_id", "phone", "mobile_no", "whatsapp_no", "remarks",
@@ -2011,10 +2015,23 @@ def search_leads(phone=None, mobile=None, first_name=None):
             order_by="modified desc"
         )
 
+        assigned_leads = frappe.get_all(
+            "Lead",
+            filters=conditions + [["Lead", "_assign", "like", f"%{user}%"]],
+            fields=[
+                "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
+                "status", "request_type", "email_id", "phone", "mobile_no", "whatsapp_no", "remarks",
+                "city", "state", "country", "creation", "owner"
+            ],
+            order_by="modified desc"
+        )
+
+        leads_map = {lead["name"]: lead for lead in (owned_leads + assigned_leads)}
+        leads = list(leads_map.values())
+
         for lead in leads:
             if lead.get("latitude") and lead.get("longitude"):
-                lat = lead["latitude"]
-                lon = lead["longitude"]
+                lat, lon = lead["latitude"], lead["longitude"]
                 lead["google_maps_link"] = f"https://www.google.com/maps?q={lat},{lon}"
 
         if not leads:
@@ -2025,6 +2042,7 @@ def search_leads(phone=None, mobile=None, first_name=None):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "search_leads")
         return send_response("Could not search leads.", 500, "Error")
+
 
 
 
