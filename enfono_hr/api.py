@@ -1975,7 +1975,7 @@ def assign_lead_to_user(lead_name=None, full_name=None):
 ### Search Leads
 
 @frappe.whitelist()
-def search_leads(phone=None, mobile=None, first_name=None):
+def search_leads(searchText=None):
     def send_response(message, status_code, status_message, **extra_fields):
         frappe.local.message_log = []
         frappe.local.response.pop("_server_messages", None)
@@ -1991,38 +1991,38 @@ def search_leads(phone=None, mobile=None, first_name=None):
         if not frappe.session.user or frappe.session.user == "Guest":
             return send_response("Please log in first.", 401, "Unauthorized")
 
+        if not searchText:
+            return send_response("Please provide searchText (phone, mobile, or first name).", 400, "Bad Request")
+
         user = frappe.session.user
-        conditions = []
 
-        if phone:
-            conditions.append(["Lead", "phone", "like", f"%{phone}%"])
-        if mobile:
-            conditions.append(["Lead", "mobile_no", "like", f"%{mobile}%"])
-        if first_name:
-            conditions.append(["Lead", "first_name", "like", f"%{first_name}%"])
+        fields = [
+            "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
+            "status", "request_type", "email_id", "phone", "mobile_no", "whatsapp_no", "remarks",
+            "city", "state", "country", "creation", "owner"
+        ]
 
-        if not conditions:
-            return send_response("Please provide phone, mobile number or first name to search.", 400, "Bad Request")
-
-        owned_leads = frappe.get_all(
+        owned_leads = frappe.get_list(
             "Lead",
-            filters=conditions + [["Lead", "owner", "=", user]],
-            fields=[
-                "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
-                "status", "request_type", "email_id", "phone", "mobile_no", "whatsapp_no", "remarks",
-                "city", "state", "country", "creation", "owner"
-            ],
+            filters={"owner": user},
+            or_filters={
+                "phone": ["like", f"%{searchText}%"],
+                "mobile_no": ["like", f"%{searchText}%"],
+                "first_name": ["like", f"%{searchText}%"]
+            },
+            fields=fields,
             order_by="modified desc"
         )
 
-        assigned_leads = frappe.get_all(
+        assigned_leads = frappe.get_list(
             "Lead",
-            filters=conditions + [["Lead", "_assign", "like", f"%{user}%"]],
-            fields=[
-                "name", "first_name", "last_name", "company_name", "location", "latitude", "longitude",
-                "status", "request_type", "email_id", "phone", "mobile_no", "whatsapp_no", "remarks",
-                "city", "state", "country", "creation", "owner"
-            ],
+            filters={"_assign": ["like", f"%{user}%"]},
+            or_filters={
+                "phone": ["like", f"%{searchText}%"],
+                "mobile_no": ["like", f"%{searchText}%"],
+                "first_name": ["like", f"%{searchText}%"]
+            },
+            fields=fields,
             order_by="modified desc"
         )
 
@@ -2042,8 +2042,6 @@ def search_leads(phone=None, mobile=None, first_name=None):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "search_leads")
         return send_response("Could not search leads.", 500, "Error")
-
-
 
 
 ########Create Customer from Lead#####
