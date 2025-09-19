@@ -2741,14 +2741,60 @@ def create_expense_claim(name=None, employee=None,  expenses=None):
         return send_response(500, "Error", "Unable to save expense claim.")
 
 
+### Detailed View
+
+@frappe.whitelist()
+def get_expense_claim_detail(name):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        if not name:
+            return send_response(400, "Bad Request", "Expense Claim name is required.")
+
+        claim = frappe.get_doc("Expense Claim", name)
+
+        expenses_detail = []
+        for exp in claim.expenses:
+            expenses_detail.append({
+                "expense_date": exp.expense_date,
+                "expense_type": exp.expense_type,
+                "description": exp.description,
+                "amount": exp.amount,
+            })
+
+        return send_response(
+            200,
+            "Success",
+            "Expense claim detail fetched successfully.",
+            data={
+                "name": claim.name,
+                "employee": claim.employee,
+                "total_claimed_amount": claim.total_claimed_amount,
+                "total_sanctioned_amount": claim.total_sanctioned_amount,
+                "status": claim.status,
+                "posting_date": claim.posting_date,
+                "expenses": expenses_detail
+            }
+        )
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Get Expense Claim Detail Failed")
+        return send_response(500, "Error", "Unable to fetch expense claim detail.")
 
 
 ### Update Expense Claim
 
 
 @frappe.whitelist()
-def update_expense_claim(name, employee=None,  expenses=None):
-   
+def update_expense_claim(name, employee=None, expenses=None):
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -2768,25 +2814,38 @@ def update_expense_claim(name, employee=None,  expenses=None):
         if claim.docstatus == 1:
             return send_response(400, "Error", "Cannot edit submitted/approved expense claim.")
 
-        
-        
+        if employee:
+            claim.employee = employee
+
         if expenses:
             if not isinstance(expenses, list):
                 return send_response(400, "Bad Request", "Expenses must be a list of objects.")
-            claim.expenses = []  
+            claim.expenses = []
             for item in expenses:
                 claim.append("expenses", item)
 
-        claim.save()
-    
-
+        claim.save(ignore_permissions=True)
         frappe.db.commit()
+
+        expenses_detail = []
+        for exp in claim.expenses:
+            expenses_detail.append({
+                "expense_type": exp.expense_type,
+                "description": exp.description,
+                "amount": exp.amount,
+            })
 
         return send_response(
             200,
             "Success",
             "Expense claim updated successfully.",
-            expense_claim=claim.name
+            data={
+                "name": claim.name,
+                "employee": claim.employee,
+                "grand_total": claim.grand_total,
+                "status": claim.status,
+                "expenses": expenses_detail
+            }
         )
 
     except Exception:
@@ -2794,6 +2853,78 @@ def update_expense_claim(name, employee=None,  expenses=None):
         return send_response(500, "Error", "Unable to update expense claim.")
 
 
+
+### Upload Claim Attachment
+
+import base64
+from frappe.utils.file_manager import save_file
+
+@frappe.whitelist(allow_guest=True)
+def upload_expense_claim_attachment():
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        data = frappe.local.form_dict
+
+        expense_claim_name = data.get("expense_claim_name")
+        files = data.get("files")
+
+        if not expense_claim_name:
+            return send_response(400, "Bad Request", "Missing expense_claim_name")
+
+        if not files or not isinstance(files, list):
+            return send_response(400, "Bad Request", "Missing or malformed files list")
+
+        results = []
+        for file_obj in files:
+            file_name = file_obj.get("file_name")
+            file_base64 = file_obj.get("file_base64")
+            res = {"file_name": file_name}
+
+            if not file_name or not file_base64:
+                res["status"] = "failed"
+                res["error"] = "Missing file_name or file_base64"
+            else:
+                try:
+                    if file_base64.startswith("data:"):
+                        file_base64 = file_base64.split(",", 1)[1]
+                    file_base64 = file_base64.strip()
+                    missing_padding = len(file_base64) % 4
+                    if missing_padding:
+                        file_base64 += "=" * (4 - missing_padding)
+                    file_data = base64.b64decode(file_base64)
+
+                    saved_file = save_file(
+                        file_name,
+                        file_data,
+                        "Expense Claim",
+                        expense_claim_name,
+                        folder="Home/Attachments",
+                        decode=False
+                    )
+                    res["status"] = "success"
+                    res["file_url"] = saved_file.file_url
+                except Exception as file_exc:
+                    res["status"] = "failed"
+                    res["error"] = str(file_exc)
+
+            results.append(res)
+
+        frappe.db.commit()
+        return send_response(200, "Success", "Files uploaded successfully", results=results)
+
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Expense Claim File Upload Error")
+        return send_response(500, "Error", "Something went wrong during upload")
+
+        
 
 ## List Payment Advance
 
