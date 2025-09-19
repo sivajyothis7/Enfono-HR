@@ -2655,7 +2655,7 @@ def list_my_expense_claims():
         claims = frappe.get_all(
             "Expense Claim",
             filters={"employee": employee},
-            fields=["name", "posting_date", "grand_total", "total_sanctioned_amount", "total_claimed_amount", "status"],
+            fields=["name", "posting_date", "total_claimed_amount","total_sanctioned_amount",  "status"],
             order_by="posting_date desc"
         )
 
