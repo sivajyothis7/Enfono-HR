@@ -2824,7 +2824,7 @@ def list_my_payment_advances(name=None):
             advance_data = frappe.db.get_value(
                 "Employee Advance",
                 advance.name,
-                ["name", "employee_name","posting_date", "advance_amount", "paid_amount", "status" ],
+                ["name", "employee_name","posting_date","purpose", "advance_amount", "paid_amount", "status" ],
                 as_dict=True
             )
 
@@ -2837,7 +2837,7 @@ def list_my_payment_advances(name=None):
             advances = frappe.get_all(
                 "Employee Advance",
                 filters={"employee": employee},
-                fields=["name", "posting_date", "advance_amount", "paid_amount", "status"],
+                fields=["name", "posting_date", "purpose","advance_amount", "paid_amount", "status"],
                 order_by="posting_date desc"
             )
 
