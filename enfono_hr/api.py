@@ -2842,7 +2842,8 @@ def update_expense_claim(name, employee=None, expenses=None):
             data={
                 "name": claim.name,
                 "employee": claim.employee,
-                "grand_total": claim.grand_total,
+                "total_claimed_amount": claim.total_claimed_amount,
+                "total_sanctioned_amount": claim.total_sanctioned_amount,
                 "status": claim.status,
                 "expenses": expenses_detail
             }
