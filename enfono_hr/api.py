@@ -2755,7 +2755,7 @@ def create_expense_claim(name=None, employee=None,  expenses=None):
 ### Detailed View
 
 @frappe.whitelist()
-def get_expense_claim_detail(name):
+def get_expense_claim_detail():
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -2767,6 +2767,8 @@ def get_expense_claim_detail(name):
         return None
 
     try:
+        name = frappe.form_dict.get("name")
+
         if not name:
             return send_response(400, "Bad Request", "Expense Claim name is required.")
 
@@ -2799,7 +2801,6 @@ def get_expense_claim_detail(name):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Get Expense Claim Detail Failed")
         return send_response(500, "Error", "Unable to fetch expense claim detail.")
-
 
 ### Update Expense Claim
 
