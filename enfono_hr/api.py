@@ -2947,8 +2947,18 @@ def create_employee_advance(**kwargs):
 
 ## Update Payment Advance
 
-@frappe.whitelist()
-def update_employee_advance(name, posting_date=None, purpose=None, advance_amount=None, employee=None):
+@frappe.whitelist(allow_guest=False)
+def update_employee_advance(name, posting_date=None, purpose=None, advance_amount=None):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
     try:
         doc = frappe.get_doc("Employee Advance", name)
 
@@ -2957,24 +2967,25 @@ def update_employee_advance(name, posting_date=None, purpose=None, advance_amoun
         if purpose:
             doc.purpose = purpose
         if advance_amount:
-            doc.advance_amount = advance_amount
-        
+            try:
+                doc.advance_amount = float(advance_amount)
+            except:
+                return send_response(400, "Bad Request", "Invalid advance amount.")
 
         doc.save(ignore_permissions=True)
         frappe.db.commit()
 
-        return {
-            "success": True,
-            "message": "Employee Advance updated successfully",
-            "data": {
-                "name": doc.name,
-                "posting_date": doc.posting_date,
-                "purpose": doc.purpose,
-                "advance_amount": doc.advance_amount,
-                "employee": doc.employee,
-                "status": doc.status
-            }
+        advance_data = {
+            "name": doc.name,
+            "posting_date": doc.posting_date,
+            "purpose": doc.purpose,
+            "advance_amount": doc.advance_amount,
+            "employee": doc.employee,
+            "status": doc.status
         }
-    except Exception as e:
+
+        return send_response(200, "Success", "Employee Advance updated successfully.", employee_advance=advance_data)
+
+    except Exception:
         frappe.log_error(frappe.get_traceback(), "Update Employee Advance API")
-        return {"success": False, "error": str(e)}
+        return send_response(500, "Error", "Unable to update employee advance.")
