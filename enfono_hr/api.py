@@ -2630,9 +2630,11 @@ def list_salary_slips():
 
 ##List Expense claim
 
+import frappe
+from frappe.utils import get_url
+
 @frappe.whitelist()
 def list_my_expense_claims():
-    
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.response["http_status_code"] = status_code
         frappe.local.response.update({
@@ -2653,7 +2655,7 @@ def list_my_expense_claims():
         claims = frappe.get_all(
             "Expense Claim",
             filters={"employee": employee},
-            fields=["name", "posting_date","grand_total","total_sanctioned_amount" ,"total_claimed_amount", "status", ],
+            fields=["name", "posting_date", "grand_total", "total_sanctioned_amount", "total_claimed_amount", "status"],
             order_by="posting_date desc"
         )
 
@@ -2666,7 +2668,17 @@ def list_my_expense_claims():
                 expense_claims=[]
             )
 
-        
+        base_url = get_url()  
+
+        for claim in claims:
+            attachments = frappe.get_all(
+                "File",
+                filters={"attached_to_doctype": "Expense Claim", "attached_to_name": claim.name},
+                fields=["file_name", "file_url"]
+            )
+            for att in attachments:
+                att["file_url"] = f"{base_url}{att['file_url']}"
+            claim["attachments"] = attachments
 
         return send_response(
             200,
@@ -2679,7 +2691,6 @@ def list_my_expense_claims():
     except Exception:
         frappe.log_error(frappe.get_traceback(), "List My Expense Claims Failed")
         return send_response(500, "Error", "Unable to fetch expense claims.")
-
 
 
 
