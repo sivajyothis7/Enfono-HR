@@ -1778,6 +1778,8 @@ def get_my_leads():
 
 #####Modify Leads####
 
+from frappe.utils import getdate
+
 @frappe.whitelist()
 def update_lead(lead_id, **kwargs):
     def send_response(status_code, status_message, message, **extra_fields):
@@ -1797,11 +1799,9 @@ def update_lead(lead_id, **kwargs):
             return send_response(401, "Unauthorized", "Please login first.")
 
         lead = frappe.get_doc("Lead", lead_id)
-        # if lead.lead_owner != user:
-        #     return send_response(403, "Forbidden", "You do not have permission to modify this lead.")
 
         editable_fields = [
-            "first_name", "last_name","custom_date","updated_date","company_name", "status","lead_source", "email_id", "phone",
+            "first_name", "last_name", "custom_date", "updated_date", "company_name", "status", "lead_source", "email_id", "phone",
             "mobile_no", "whatsapp_no", "website", "remarks", "gender",
             "request_type", "city", "state"
         ]
@@ -1820,6 +1820,13 @@ def update_lead(lead_id, **kwargs):
                     return send_response(400, "Invalid", "Invalid request type.")
                 if field == "email_id" and value and not frappe.utils.validate_email_address(value):
                     return send_response(400, "Invalid", "Invalid email address.")
+
+                if field == "updated_date" and value:
+                    try:
+                        value = getdate(value)  
+                    except Exception:
+                        return send_response(400, "Invalid", "Invalid date format for updated_date.")
+
                 lead.set(field, value)
 
         lead.save(ignore_permissions=True)
@@ -1832,7 +1839,6 @@ def update_lead(lead_id, **kwargs):
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Update Lead Failed")
         return send_response(500, "Error", "Failed to update lead.")
-
 
 ####Delete My Lead####
 
