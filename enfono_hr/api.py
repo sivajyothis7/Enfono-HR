@@ -3238,10 +3238,9 @@ def delete_my_payment_advance(payment_advance):
 ### Register Device
 
 
-@frappe.whitelist(allow_guest=True)
-def register_device(user, device_token, device_type):
-   
 
+@frappe.whitelist(allow_guest=True)
+def register_device(user, device_token, device_type, device_name=None):
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.message_log = []
         frappe.local.response.pop("_server_messages", None)
@@ -3254,8 +3253,8 @@ def register_device(user, device_token, device_type):
         })
 
     try:
-        if not user or not device_token:
-            return send_response(400, "Bad Request", "User and Device Token are required")
+        if not user or not device_token or not device_type:
+            return send_response(400, "Bad Request", "User, Device Token, and Device Type are required")
 
         existing = frappe.get_all(
             "User Devices",
@@ -3266,6 +3265,8 @@ def register_device(user, device_token, device_type):
         if existing:
             doc = frappe.get_doc("User Devices", existing[0].name)
             doc.device_token = device_token
+            if device_name:
+                doc.device_name = device_name
             doc.save(ignore_permissions=True)
             action = "updated"
             device_id = doc.name
@@ -3274,7 +3275,8 @@ def register_device(user, device_token, device_type):
                 "doctype": "User Devices",
                 "user": user,
                 "device_token": device_token,
-                "device_type": device_type
+                "device_type": device_type,
+                "device_name": device_name
             }).insert(ignore_permissions=True)
             action = "created"
             device_id = doc.name
@@ -3289,6 +3291,7 @@ def register_device(user, device_token, device_type):
                 "device_id": device_id,
                 "user": user,
                 "device_type": device_type,
+                "device_name": device_name,
                 "device_token": device_token,
             }
         )
