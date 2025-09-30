@@ -1,0 +1,118 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-09-29 14:51:08.896445",
+ "default_view": "List",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "service_account",
+  "project_id",
+  "private_key_id",
+  "private_key",
+  "client_email",
+  "client_id",
+  "token_uri",
+  "auth_uri",
+  "auth_provider_x509_cert_url",
+  "client_x509_cert_url",
+  "universe_domain",
+  "section_break_vetm",
+  "access_token",
+  "expiration_time"
+ ],
+ "fields": [
+  {
+   "fieldname": "service_account",
+   "fieldtype": "Data",
+   "label": "Service Account"
+  },
+  {
+   "fieldname": "project_id",
+   "fieldtype": "Data",
+   "label": "Project Id"
+  },
+  {
+   "fieldname": "private_key_id",
+   "fieldtype": "Data",
+   "label": "Private Key Id"
+  },
+  {
+   "fieldname": "private_key",
+   "fieldtype": "Password",
+   "label": "Private Key"
+  },
+  {
+   "fieldname": "client_email",
+   "fieldtype": "Data",
+   "label": "Client Email"
+  },
+  {
+   "fieldname": "client_id",
+   "fieldtype": "Data",
+   "label": "Client Id"
+  },
+  {
+   "fieldname": "token_uri",
+   "fieldtype": "Data",
+   "label": "Token Uri"
+  },
+  {
+   "fieldname": "auth_uri",
+   "fieldtype": "Data",
+   "label": "Auth Uri"
+  },
+  {
+   "fieldname": "auth_provider_x509_cert_url",
+   "fieldtype": "Data",
+   "label": "Auth Provider Cert"
+  },
+  {
+   "fieldname": "client_x509_cert_url",
+   "fieldtype": "Data",
+   "label": "Client Cert"
+  },
+  {
+   "fieldname": "universe_domain",
+   "fieldtype": "Data",
+   "label": "Universe Domain"
+  },
+  {
+   "fieldname": "section_break_vetm",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "access_token",
+   "fieldtype": "Password",
+   "label": "Access Token"
+  },
+  {
+   "fieldname": "expiration_time",
+   "fieldtype": "Datetime",
+   "label": "Expiration Time"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-09-29 14:51:08.896445",
+ "modified_by": "Administrator",
+ "module": "Enfono HR",
+ "name": "Firebase Notification Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

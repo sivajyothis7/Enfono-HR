@@ -2943,7 +2943,53 @@ def upload_expense_claim_attachment():
         frappe.log_error(frappe.get_traceback(), "Expense Claim File Upload Error")
         return send_response(500, "Error", "Something went wrong during upload")
 
-        
+
+
+
+
+### Delete Expense Claim
+
+
+
+@frappe.whitelist()
+def delete_my_expense_claim(expense_claim):
+    def send_response(status_code, status_message, message):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message
+        })
+        return None
+
+    try:
+        user = frappe.session.user
+
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No employee linked to the current user.")
+
+        claim = frappe.db.get_value(
+            "Expense Claim",
+            {"name": expense_claim, "employee": employee},
+            ["name", "status"],
+            as_dict=True
+        )
+
+        if not claim:
+            return send_response(404, "Not Found", "Expense Claim not found or not owned by you.")
+
+        if claim.status != "Draft":
+            return send_response(400, "Invalid Action", "Only Draft expense claims can be deleted.")
+
+        frappe.delete_doc("Expense Claim", claim.name, force=1)
+
+        return send_response(200, "Success", f"Expense Claim {claim.name} deleted successfully.")
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Delete Expense Claim Failed")
+        return send_response(500, "Error", "Unable to delete expense claim.")
+
 
 ## List Payment Advance
 
@@ -3139,3 +3185,114 @@ def update_employee_advance(name, posting_date=None, purpose=None, advance_amoun
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Update Employee Advance API")
         return send_response(500, "Error", "Unable to update employee advance.")
+
+
+### Delete Payment Advance
+
+
+
+@frappe.whitelist()
+def delete_my_payment_advance(payment_advance):
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.response["http_status_code"] = status_code
+        frappe.local.response.update({
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+        return None
+
+    try:
+        user = frappe.session.user
+        employee = frappe.db.get_value("Employee", {"user_id": user})
+        if not employee:
+            return send_response(404, "Not Found", "No employee linked to the current user.")
+
+        advance = frappe.get_doc("Employee Advance", payment_advance)
+
+        if advance.employee != employee and "HR Manager" not in frappe.get_roles(user):
+            return send_response(403, "Forbidden", "You are not allowed to delete this advance.")
+
+        if advance.status != "Draft":
+            return send_response(400, "Invalid Action", "Only Draft payment advances can be deleted.")
+
+        advance.delete()
+        frappe.db.commit()
+
+        return send_response(
+            200,
+            "Success",
+            f"Payment Advance {payment_advance} deleted successfully."
+        )
+
+    except frappe.DoesNotExistError:
+        return send_response(404, "Not Found", "Payment Advance not found.")
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Delete My Payment Advance Failed")
+        return send_response(500, "Error", "Unable to delete payment advance.")
+
+
+
+### Register Device
+
+
+@frappe.whitelist(allow_guest=True)
+def register_device(user, device_token, device_type):
+   
+
+    def send_response(status_code, status_message, message, **extra_fields):
+        frappe.local.message_log = []
+        frappe.local.response.pop("_server_messages", None)
+        frappe.local.response.update({
+            "http_status_code": status_code,
+            "status_code": status_code,
+            "status_message": status_message,
+            "message": message,
+            **extra_fields
+        })
+
+    try:
+        if not user or not device_token:
+            return send_response(400, "Bad Request", "User and Device Token are required")
+
+        existing = frappe.get_all(
+            "User Devices",
+            filters={"user": user, "device_type": device_type},
+            fields=["name"]
+        )
+
+        if existing:
+            doc = frappe.get_doc("User Devices", existing[0].name)
+            doc.device_token = device_token
+            doc.save(ignore_permissions=True)
+            action = "updated"
+            device_id = doc.name
+        else:
+            doc = frappe.get_doc({
+                "doctype": "User Devices",
+                "user": user,
+                "device_token": device_token,
+                "device_type": device_type
+            }).insert(ignore_permissions=True)
+            action = "created"
+            device_id = doc.name
+
+        frappe.db.commit()
+
+        return send_response(
+            200,
+            "Success",
+            f"Device {action} successfully",
+            data={
+                "device_id": device_id,
+                "user": user,
+                "device_type": device_type,
+                "device_token": device_token,
+            }
+        )
+
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Register Device Failed")
+        return send_response(500, "Error", "Could not register device")

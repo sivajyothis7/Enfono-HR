@@ -130,6 +130,11 @@ web_include_js = "/assets/enfono_hr/js/test_login.js"
 # 		"on_trash": "method"
 # 	}
 # }
+doc_events = {
+    "Notification Log": {
+        "after_insert": "enfono_hr.firebase_notification.notification_queue"
+    }
+}
 
 # Scheduled Tasks
 # ---------------
