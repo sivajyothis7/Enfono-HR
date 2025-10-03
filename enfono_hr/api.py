@@ -3239,8 +3239,8 @@ def delete_my_payment_advance(payment_advance):
 
 
 
-@frappe.whitelist(allow_guest=False)
-def register_device(device_token, device_type, device_name=None):
+@frappe.whitelist()
+def register_device(user, device_token, device_type, device_name=None):
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.message_log = []
         frappe.local.response.pop("_server_messages", None)
@@ -3257,6 +3257,9 @@ def register_device(device_token, device_type, device_name=None):
         logged_user = frappe.session.user
         if logged_user in ("Guest", None):
             return send_response(401, "Unauthorized", "Login required")
+
+        if logged_user != user:
+            return send_response(403, "Forbidden", "Logged in user mismatch")
 
         employee = frappe.db.get_value("Employee", {"user_id": logged_user}, "name")
         if not employee:
