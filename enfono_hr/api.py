@@ -3239,7 +3239,7 @@ def delete_my_payment_advance(payment_advance):
 
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=False)
 def register_device(device_token, device_type, device_name=None):
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.message_log = []
@@ -3251,7 +3251,7 @@ def register_device(device_token, device_type, device_name=None):
             "message": message,
             **extra_fields
         })
-        return frappe.local.response 
+        return frappe.local.response
 
     try:
         logged_user = frappe.session.user
@@ -3276,7 +3276,7 @@ def register_device(device_token, device_type, device_name=None):
         if existing:
             doc = frappe.get_doc("User Devices", existing[0].name)
             doc.device_token = device_token
-            doc.device_name = device_name or doc.device_name  
+            doc.device_name = device_name or doc.device_name
             doc.save(ignore_permissions=True)
             action = "updated"
             device_id = doc.name
@@ -3284,7 +3284,7 @@ def register_device(device_token, device_type, device_name=None):
             doc = frappe.get_doc({
                 "doctype": "User Devices",
                 "user": logged_user,
-                "employee": employee,   
+                "employee": employee,
                 "device_token": device_token,
                 "device_type": device_type,
                 "device_name": device_name
@@ -3307,8 +3307,5 @@ def register_device(device_token, device_type, device_name=None):
         )
 
     except Exception:
-        frappe.log_error(
-            title="Register Device Failed",
-            message=frappe.get_traceback()
-        )
-        return send_response(500, "Error", "Could not register device")
+        frappe.log_error(frappe.get_traceback(), "Register Device Failed")
+        return send_response(500, "Error", "Unable to register device.")
