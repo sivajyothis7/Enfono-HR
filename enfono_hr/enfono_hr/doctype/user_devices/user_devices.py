@@ -5,5 +5,4 @@ import frappe
 from frappe.model.document import Document
 
 class UserDevices(Document):
-    def after_insert(self):
-        pass
+    pass
