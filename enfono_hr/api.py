@@ -3239,8 +3239,8 @@ def delete_my_payment_advance(payment_advance):
 
 
 
-@frappe.whitelist(allow_guest=True)
-def register_device(user, device_token, device_type, device_name=None):
+@frappe.whitelist()  
+def register_device(device_token, device_type, device_name=None):
     def send_response(status_code, status_message, message, **extra_fields):
         frappe.local.message_log = []
         frappe.local.response.pop("_server_messages", None)
@@ -3253,12 +3253,22 @@ def register_device(user, device_token, device_type, device_name=None):
         })
 
     try:
-        if not user or not device_token or not device_type:
-            return send_response(400, "Bad Request", "User, Device Token, and Device Type are required")
+        logged_user = frappe.session.user
+        if logged_user in ("Guest", None):
+            return send_response(401, "Unauthorized", "Login required")
+
+        employee = frappe.db.get_value("Employee", {"user_id": logged_user}, "name")
+        if not employee:
+            return send_response(403, "Forbidden", "No Employee linked to this user")
+
+        if not device_token or not device_type:
+            return send_response(
+                400, "Bad Request", "Device Token and Device Type are required"
+            )
 
         existing = frappe.get_all(
             "User Devices",
-            filters={"user": user, "device_type": device_type},
+            filters={"user": logged_user, "device_type": device_type},
             fields=["name"]
         )
 
@@ -3273,7 +3283,7 @@ def register_device(user, device_token, device_type, device_name=None):
         else:
             doc = frappe.get_doc({
                 "doctype": "User Devices",
-                "user": user,
+                "user": logged_user,
                 "device_token": device_token,
                 "device_type": device_type,
                 "device_name": device_name
@@ -3289,7 +3299,8 @@ def register_device(user, device_token, device_type, device_name=None):
             f"Device {action} successfully",
             data={
                 "device_id": device_id,
-                "user": user,
+                "user": logged_user,
+                "employee": employee,
                 "device_type": device_type,
                 "device_name": device_name,
                 "device_token": device_token,
@@ -3297,5 +3308,8 @@ def register_device(user, device_token, device_type, device_name=None):
         )
 
     except Exception:
-        frappe.log_error(frappe.get_traceback(), "Register Device Failed")
+        frappe.log_error(
+            title="Register Device Failed",
+            message=frappe.get_traceback()
+        )
         return send_response(500, "Error", "Could not register device")
