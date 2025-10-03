@@ -5,8 +5,5 @@ import frappe
 from frappe.model.document import Document
 
 class UserDevices(Document):
-    
     def after_insert(self):
-        frappe.log_error(f"Device Token saved: {self.device_token}", "UserDevices")
-
-
+        pass
