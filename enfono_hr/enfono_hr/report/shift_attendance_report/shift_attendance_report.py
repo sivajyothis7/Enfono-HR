@@ -1,7 +1,7 @@
 # Copyright (c) 2025, siva and contributors
 # For license information, please see license.txt
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import frappe
 from frappe import _
 from frappe.utils import cint, flt, format_datetime
@@ -153,7 +153,6 @@ def update_data(data, consider_grace_period):
         update_early_exit(d, consider_grace_period)
 
         d.working_hours = format_float_precision(d.working_hours)
-
         d.in_time, d.out_time = format_in_out_time(d.in_time, d.out_time, d.attendance_date)
         d.shift_start, d.shift_end = convert_datetime_to_time_for_same_date(d.shift_start, d.shift_end)
         d.shift_actual_start, d.shift_actual_end = convert_datetime_to_time_for_same_date(
@@ -189,9 +188,11 @@ def update_late_entry(entry, consider_grace_period):
         entry.late_entry_hrs = ""
         return
 
+    shift_dt = datetime.combine(entry.attendance_date, entry.shift_start)
+
     if consider_grace_period and entry.enable_late_entry_marking:
         grace_period = entry.late_entry_grace_period or 0
-        start_time = entry.shift_start + timedelta(minutes=grace_period)
+        start_time = shift_dt + timedelta(minutes=grace_period)
         if entry.in_time > start_time:
             entry.late_entry = 1
             entry.late_entry_hrs = format_hms(entry.in_time - start_time)
@@ -199,9 +200,9 @@ def update_late_entry(entry, consider_grace_period):
             entry.late_entry = 0
             entry.late_entry_hrs = ""
     else:
-        if entry.in_time > entry.shift_start:
+        if entry.in_time > shift_dt:
             entry.late_entry = 1
-            entry.late_entry_hrs = format_hms(entry.in_time - entry.shift_start)
+            entry.late_entry_hrs = format_hms(entry.in_time - shift_dt)
         else:
             entry.late_entry = 0
             entry.late_entry_hrs = ""
@@ -212,9 +213,11 @@ def update_early_exit(entry, consider_grace_period):
         entry.early_exit_hrs = ""
         return
 
+    shift_dt = datetime.combine(entry.attendance_date, entry.shift_end)
+
     if consider_grace_period and entry.enable_early_exit_marking:
         grace_period = entry.early_exit_grace_period or 0
-        end_time = entry.shift_end - timedelta(minutes=grace_period)
+        end_time = shift_dt - timedelta(minutes=grace_period)
         if entry.out_time < end_time:
             entry.early_exit = 1
             entry.early_exit_hrs = format_hms(end_time - entry.out_time)
@@ -222,9 +225,9 @@ def update_early_exit(entry, consider_grace_period):
             entry.early_exit = 0
             entry.early_exit_hrs = ""
     else:
-        if entry.out_time < entry.shift_end:
+        if entry.out_time < shift_dt:
             entry.early_exit = 1
-            entry.early_exit_hrs = format_hms(entry.shift_end - entry.out_time)
+            entry.early_exit_hrs = format_hms(shift_dt - entry.out_time)
         else:
             entry.early_exit = 0
             entry.early_exit_hrs = ""
