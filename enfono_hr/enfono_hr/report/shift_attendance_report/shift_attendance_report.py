@@ -92,7 +92,7 @@ def get_query(filters):
 
     query = (
         frappe.qb.from_(attendance)
-        .left_join(checkin).on(checkin.attendance == attendance.name)  
+        .left_join(checkin).on(checkin.attendance == attendance.name)
         .inner_join(shift_type).on(attendance.shift == shift_type.name)
         .select(
             attendance.name,
@@ -189,7 +189,7 @@ def convert_datetime_to_time_for_same_date(start, end):
     return start, end
 
 def update_late_entry(entry, consider_grace_period):
-    if not entry.in_time:
+    if not entry.in_time or not entry.shift_start:
         entry.late_entry = 0
         entry.late_entry_hrs = ""
         return
@@ -212,7 +212,7 @@ def update_late_entry(entry, consider_grace_period):
             entry.late_entry_hrs = ""
 
 def update_early_exit(entry, consider_grace_period):
-    if not entry.out_time:
+    if not entry.out_time or not entry.shift_end:
         entry.early_exit = 0
         entry.early_exit_hrs = ""
         return
