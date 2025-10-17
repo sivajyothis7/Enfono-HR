@@ -108,8 +108,8 @@ def get_query(filters):
             attendance.early_exit,
             attendance.department,
             attendance.company,
-            checkin.shift_start,
-            checkin.shift_end,
+            shift_type.start_time.as_("shift_start"),
+            shift_type.end_time.as_("shift_end"),
             checkin.shift_actual_start,
             checkin.shift_actual_end,
             shift_type.enable_late_entry_marking,
@@ -130,9 +130,9 @@ def get_query(filters):
             elif filter == "consider_grace_period":
                 continue
             elif filter == "late_entry" and not filters.consider_grace_period:
-                query = query.where(attendance.in_time > checkin.shift_start)
+                query = query.where(attendance.in_time > shift_type.start_time)
             elif filter == "early_exit" and not filters.consider_grace_period:
-                query = query.where(attendance.out_time < checkin.shift_end)
+                query = query.where(attendance.out_time < shift_type.end_time)
             else:
                 query = query.where(attendance[filter] == filters[filter])
 
@@ -149,21 +149,16 @@ def format_hms(td):
 
 def update_data(data, consider_grace_period):
     for d in data:
-        if not d.in_time or not d.out_time:
-            d.working_hours = 0
-            d.late_entry_hrs = ""
-            d.early_exit_hrs = ""
-            d.late_entry = 0
-            d.early_exit = 0
-        else:
-            update_late_entry(d, consider_grace_period)
-            update_early_exit(d, consider_grace_period)
-            d.working_hours = format_float_precision(d.working_hours)
-            d.in_time, d.out_time = format_in_out_time(d.in_time, d.out_time, d.attendance_date)
-            d.shift_start, d.shift_end = convert_datetime_to_time_for_same_date(d.shift_start, d.shift_end)
-            d.shift_actual_start, d.shift_actual_end = convert_datetime_to_time_for_same_date(
-                d.shift_actual_start, d.shift_actual_end
-            )
+        update_late_entry(d, consider_grace_period)
+        update_early_exit(d, consider_grace_period)
+
+        d.working_hours = format_float_precision(d.working_hours)
+
+        d.in_time, d.out_time = format_in_out_time(d.in_time, d.out_time, d.attendance_date)
+        d.shift_start, d.shift_end = convert_datetime_to_time_for_same_date(d.shift_start, d.shift_end)
+        d.shift_actual_start, d.shift_actual_end = convert_datetime_to_time_for_same_date(
+            d.shift_actual_start, d.shift_actual_end
+        )
     return data
 
 def format_float_precision(value):
@@ -180,7 +175,7 @@ def format_in_out_time(in_time, out_time, attendance_date):
     return in_time, out_time
 
 def convert_datetime_to_time_for_same_date(start, end):
-    if start and end and start.date() == end.date():
+    if start and end and hasattr(start, "date") and start.date() == end.date():
         start = start.time()
         end = end.time()
     else:
